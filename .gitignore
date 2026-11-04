@@ -7,3 +7,6 @@ node_modules/
 .native-host/
 
 .submit-preferences.json.lock
+
+.qoj-inspection*.json
+tmp/pdfs/

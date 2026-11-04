@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto');
-const {readPreferences,preferencesFile}=require('./preferences');
+const {readPreferences,preferencesFile,requireAvailableOj,profileFor,ojModeFor,updateOjPreferences}=require('./preferences');
 const {createBridge}=require('./bridge');
 const {notifyBrowser}=require('./wakeup');
 const {openInVSCode}=require('./editor');
 const {saveStandings}=require('./standings-report');
 function lastAddition(state){
- const added=state.lastAddition;
- if(!added||! /^(contest|problem)$/.test(added.kind)||! /^[1-9]\d*$/.test(added.contest)||!path.isAbsolute(added.directory||''))throw Error('没有添加记录，open 命令无效。请先在 Dashboard 或题目页点击 +（或按 Shift+N）。');
+ const oj=ojModeFor(state).id,added=profileFor(state,oj).lastAddition;
+ if(!added||! /^(contest|problem)$/.test(added.kind)||!(oj==='qoj'?/^[1-9]\d*$/.test(added.problem||added.contest):/^[1-9]\d*$/.test(added.contest))||!path.isAbsolute(added.directory||''))throw Error('没有添加记录，open 命令无效。请先在 Dashboard 或题目页点击 +（或按 Shift+N）。');
  return added;
 }
 async function saveStatement(state){
@@ -25,28 +25,41 @@ async function openStandings(state,{secret,timeout=180000,log=console.log,port=2
  return new Promise((resolve,reject)=>{
   let timer,finished=false;
   const finish=(error,standings)=>{if(finished)return;finished=true;clearTimeout(timer);server.close(()=>{if(error)reject(error);else resolve(standings);});server.closeIdleConnections();};
-  const server=createBridge({secret,token,job:{action:'open-standings',contest:added.contest,section:added.section||'contest'},onEvent:event=>{
+  const server=createBridge({secret,token,job:{oj:ojModeFor(state).id,action:'open-standings',contest:added.contest,section:added.section||'contest'},onEvent:event=>{
    if(event.final)finish(event.ok?undefined:Error(event.message),event.standings);
   }});
   server.once('error',error=>finish(Error(error.code==='EADDRINUSE'?'已有浏览器任务正在运行，请等待完成后重试。':error.message)));
   server.listen(port,'127.0.0.1',()=>{
-   log('正在通知浏览器扩展在新标签页打开 Friends standings 并读取完整榜单…');
+   log('正在通知浏览器扩展在新标签页打开 '+(ojModeFor(state).id==='qoj'?'QOJ External Standings':'Friends standings')+' 并读取完整榜单…');
    onListening(server.address().port);
    timer=setTimeout(()=>{finish(Error('读取榜单超时，请确认浏览器已启动、扩展已更新并配对，并检查榜单页登录或验证。'));server.closeAllConnections();},timeout);
    if(port===27121)notifyBrowser(secret).catch(()=>{});
   });
  });
 }
-async function main(args=process.argv.slice(2),{stateFile=preferencesFile,openEditor=openInVSCode,openBoard=openStandings,log=console.log}={}){
+async function main(args=process.argv.slice(2),{stateFile=preferencesFile,openEditor=openInVSCode,openBoard=openStandings,chooseContest,log=console.log}={}){
  if(args.length!==1||!['s','b'].includes(args[0]))throw Error('用法：open s 保存最近添加的题面；open b 在新标签页打开对应比赛榜单。');
- const state=readPreferences(stateFile);lastAddition(state);
+ const state=readPreferences(stateFile),mode=requireAvailableOj(state);const added=lastAddition(state);
  if(args[0]==='s'){
+  if(mode.id==='qoj'){
+   const upgraded=await require('./qoj-files').upgradeQojStatement(added);
+   if(upgraded!==added){state.qoj={...state.qoj,lastAddition:upgraded};await updateOjPreferences({lastAddition:upgraded},'qoj',stateFile);}
+  }
   const target=await saveStatement(state);log('已保存题面（覆盖同名文件）：'+target);
   await openEditor(target);log('已在 VS Code 中打开 statement.md。');return;
  }
+ if(mode.id==='qoj'&&!added.contest){
+  const options=(added.contests||[]).map(id=>'https://qoj.ac/contest/'+id);
+  let value;
+  if(chooseContest)value=await chooseContest(options);
+  else{const rl=require('node:readline/promises').createInterface({input:process.stdin,output:process.stdout});try{log('当前题目没有唯一比赛上下文。'+(options.length?'候选比赛：'+options.join('、'):''));value=await rl.question('请输入要打开榜单的 QOJ 比赛编号或网址（留空取消）：');}finally{rl.close();}}
+  if(!value?.trim()){log('已取消打开榜单。');return;}
+  const match=/^(?:https:\/\/qoj\.ac\/contest\/)?([1-9]\d*)\/?$/.exec(value.trim());if(!match)throw Error('QOJ 比赛编号或网址无效。');
+  added.contest=match[1];await updateOjPreferences({lastAddition:added},'qoj',stateFile);
+ }
  let secret;try{secret=(await fs.readFile(path.join(path.dirname(stateFile),'.bridge-secret'),'utf8')).trim();}catch(e){if(e.code!=='ENOENT')throw e;}
  const standings=await openBoard(state,{secret,log});
- const target=await saveStandings(lastAddition(state),standings);log('已保存完整好友榜单：'+target);
+ const target=await saveStandings(lastAddition(state),standings);log('已保存完整'+(mode.id==='qoj'?' External Standings':'好友榜单')+'：'+target);
  await openEditor(target);log('已在 VS Code 中打开 standings.md。');
 }
 if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});

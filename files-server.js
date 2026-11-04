@@ -57,8 +57,8 @@ function createFilesServer(secret,stateFile=preferencesFile){return http.createS
  const send=(code,data)=>{res.writeHead(code);res.end(JSON.stringify(data));};
  if(req.headers.authorization!==`Bearer ${secret}`)return send(403,{error:'配对码不匹配，请重新配对。'});
  if(req.method!=='POST'||req.url!=='/create')return send(404,{error:'未知操作'});
- let body='',oversized=false;req.on('data',chunk=>{if(oversized)return;body+=chunk;if(Buffer.byteLength(body)>1048576){oversized=true;send(413,{error:'请求过大'});}});
- req.on('end',async()=>{if(oversized)return;let data;try{data=JSON.parse(body);}catch{return send(400,{error:'请求格式错误'});}try{send(200,await createProblemFile(data.directory,data.url,stateFile,data.initialContent,data.samples,data.statement));}catch(e){send(400,{error:e.message});}});
+ let body='',oversized=false;req.on('data',chunk=>{if(oversized)return;body+=chunk;if(Buffer.byteLength(body)>64*1024*1024){oversized=true;send(413,{error:'请求过大'});}});
+ req.on('end',async()=>{if(oversized)return;let data;try{data=JSON.parse(body);}catch{return send(400,{error:'请求格式错误'});}try{send(200,data.oj==='qoj'?await require('./qoj-files').createQojFiles({...data,action:data.action||'qoj-create'},stateFile):await createProblemFile(data.directory,data.url,stateFile,data.initialContent,data.samples,data.statement));}catch(e){send(400,{error:e.message});}});
 });}
 async function serveFiles(secret){const server=createFilesServer(secret);await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(27122,'127.0.0.1',resolve);});console.log('浏览器新建文件助手已启动。保持此终端运行；Ctrl+C 停止。保存目录在浏览器扩展设置中填写，没有默认目录。');return server;}
 module.exports={contestStatement,createContestFiles,createProblemFile,createFilesServer,serveFiles};

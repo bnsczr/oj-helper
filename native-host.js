@@ -11,13 +11,13 @@ function encode(message){const body=Buffer.from(JSON.stringify(message),'utf8'),
 async function finishAddition(result,message,openEditor){
  // Old clients retain their original behavior until the extension is updated.
  if(message.openAfterAdd===undefined)return result;
- const settings=normalizeOpenSettings(message.openAfterAdd),dashboard=message.action==='create-dashboard';
+ const settings=normalizeOpenSettings(message.openAfterAdd),dashboard=['create-dashboard','qoj-create-dashboard'].includes(message.action);
  const targets=(dashboard?settings.dashboardCpp:settings.problemCpp)?(dashboard?result.files.map(file=>file.path):[result.path]):[];
- const warnings=[];
+ const warnings=[...(result.warnings||[])];
  if(dashboard?settings.dashboardStatement:settings.problemStatement){
   try{
-   const added=dashboard?{...dashboardFromUrl(message.url),kind:'contest',directory:message.directory,statement:contestStatement(dashboardFromUrl(message.url),message.problems)}:{kind:'problem',contest:parseProblem(result.defaultProblem).contest,directory:message.directory,statement:message.statement};
-   result.statementPath=await saveStatement({lastAddition:added});targets.push(result.statementPath);
+   const added=result.oj==='qoj'?result.addition:dashboard?{...dashboardFromUrl(message.url),kind:'contest',directory:message.directory,statement:contestStatement(dashboardFromUrl(message.url),message.problems)}:{kind:'problem',contest:parseProblem(result.defaultProblem).contest,directory:message.directory,statement:message.statement};
+   result.statementPath=await saveStatement(result.oj==='qoj'?{activeOj:'qoj',qoj:{lastAddition:added}}:{lastAddition:added});targets.push(result.statementPath);
   }catch(error){warnings.push('题面自动保存失败：'+error.message);}
  }
  if(targets.length){
@@ -31,6 +31,7 @@ async function handle(message,{secretFile=path.join(__dirname,'.bridge-secret'),
  try{
   const secret=fs.readFileSync(secretFile,'utf8').trim();
   if(!secret||message.secret!==secret)throw Error('配对码不匹配，请重新配对。');
+  if(['qoj-create','qoj-create-dashboard'].includes(message.action)){const result=await finishAddition(await require('./qoj-files').createQojFiles(message,stateFile),message,openEditor);delete result.addition;return result;}
   if(message.action==='create-dashboard')return await finishAddition(await createContestFiles(message.directory,message.url,message.problems,stateFile,message.initialContent),message,openEditor);
   if(message.action!=='create')throw Error('未知操作');
   return await finishAddition(await createProblemFile(message.directory,message.url,stateFile,message.initialContent,message.samples,message.statement),message,openEditor);
@@ -41,7 +42,7 @@ function run(options){
  process.stdin.on('data',chunk=>{
   if(done)return;input=Buffer.concat([input,chunk]);if(input.length<4)return;
   const length=input.readUInt32LE();
-  if(length>1048576){done=true;process.stdout.write(encode({error:'请求过大'}),()=>process.exit(1));return;}
+  if(length>64*1024*1024){done=true;process.stdout.write(encode({error:'请求过大'}),()=>process.exit(1));return;}
   if(input.length<length+4)return;done=true;
   (async()=>{let response;try{
    const message=JSON.parse(input.subarray(4,length+4).toString('utf8'));

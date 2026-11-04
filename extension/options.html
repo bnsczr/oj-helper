@@ -1,7 +1,7 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>oj-helper 设置与配对</title><body>
-<h2>连接 VS Code 终端</h2><p>先在终端运行 submit --pair，将显示的配对码粘贴到这里。</p>
+<h2>连接 VS Code 终端</h2><p>先在终端运行 submit --pair，将显示的配对码粘贴到这里。</p><p id="connectionStatus" role="status"></p>
 <label>配对码 <input id="secret" type="password" size="65"></label><button id="save">保存</button><p id="status"></p>
-<h2>新建题目文件</h2><p>保存目录需填写已有文件夹的绝对路径，没有默认路径。例：E:\code\CF</p>
+<h2>新建题目文件（CF / QOJ）</h2><p>保存目录需填写已有文件夹的绝对路径，没有默认路径。例：E:\code\CF。两站的题号关联、语言选择和最近题面分别保存；同一保存目录中的同名源码仍会覆盖。</p>
 <label>保存目录 <input id="directory" type="text" size="65" placeholder="请填写绝对路径"></label><button id="saveDirectory">保存目录</button><p id="directoryStatus" role="status"></p>
 <p>只需一次性安装浏览器连接，之后点击 + 会自动启动助手，依次分配 A.cpp、B.cpp 等文件并更新对应题号，无需常驻终端。</p><p>在终端运行一次：<code id="nativeInstall"></code></p>
 <h2>新建文件的初始内容</h2><p>点击 + 或按 Shift+N 添加题目时，会覆盖已有同名文件并写入以下内容。Dashboard 会批量创建题号对应的文件，并附上各题样例。留空并保存可创建空文件。</p>
@@ -18,7 +18,7 @@
 <button id="saveOpenAfterAdd">保存自动打开设置</button><p id="openAfterAddStatus" role="status"></p>
 <h2>open b 好友榜单</h2>
 <label><input id="standingsShowUnofficial" type="checkbox">包含非正式参赛者（Show unofficial，默认开启）</label>
-<p>直接打开 Friends standings，读取该页完整榜单并保存为 standings.md，在 VS Code 中打开。保留所有行、全部题目列、排名、罚时或得分及评分变化，比赛结束后同样完整保留。开启上方选项时包含非正式参赛者。</p>
+<p>CF 打开 Friends standings，QOJ 打开比赛页的 Extra/External Standings，读取完整榜单并保存为 standings.md，在 VS Code 中打开。保留所有行、全部题目列、排名、罚时或得分及评分变化。Show unofficial 仅用于 CF。</p>
 <button id="saveStandings">保存榜单设置</button><p id="standingsStatus" role="status"></p>
-<h2>添加题目快捷键</h2><p>在 Codeforces 题目页或比赛 Dashboard 按 Shift+N，执行与 + 相同的添加操作，页面提示“正在添加…”和“更新完成”。输入框或代码编辑器中不触发，以免影响输入大写 N。更新扩展后请刷新题目页。</p>
+<h2>添加题目快捷键</h2><p>在 Codeforces 或 QOJ 题目页、比赛 Dashboard 按 Shift+N，执行与 + 相同的添加操作，页面提示“正在添加…”和“更新完成”。输入框或代码编辑器中不触发，以免影响输入大写 N。更新扩展后请刷新题目页。</p>
 <script src="template.js"></script><script src="open-settings.js"></script><script src="options.js"></script></body></html>

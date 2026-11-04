@@ -1,9 +1,46 @@
-if(typeof importScripts==='function')importScripts('problem.js','dashboard.js','standings.js');
+if(typeof importScripts==='function')importScripts('qoj.js','qoj-page.js','qoj-worker.js','problem.js','dashboard.js','standings.js');
 async function poll(){
   try{
     const {bridgeSecret}=await chrome.storage.local.get('bridgeSecret');if(!bridgeSecret)return;
-    const r=await fetch('http://127.0.0.1:27121/pending',{headers:{Authorization:`Bearer ${bridgeSecret}`},signal:AbortSignal.timeout(4000)});if(!r.ok)return;
-    const task=await r.json();if(!/^27121:[a-f0-9]{48}$/.test(task.key)||! /^[1-9]\d*$/.test(task.contest))return;
+    const r=await fetch('http://127.0.0.1:27121/pending',{headers:{Authorization:`Bearer ${bridgeSecret}`,'X-Oj-Helper-Platforms':'cf,qoj'},signal:AbortSignal.timeout(4000)});if(!r.ok)return;
+    const task=await r.json();if(!/^27121:[a-f0-9]{48}$/.test(task.key))return;
+    if(task.oj==='qoj'&&task.action==='qoj-inspect'){
+      const pages=[];const tabs=await chrome.tabs.query({url:'https://qoj.ac/*'});
+      for(const tab of tabs){try{await fetch('http://127.0.0.1:27121/result?token='+task.key.split(':')[1],{method:'POST',body:JSON.stringify({message:'正在读取页面结构：'+tab.url})});const result=await qojScript({target:{tabId:tab.id},func:inspectQojPage});if(result[0]?.result)pages.push(result[0].result);}catch(error){pages.push({url:tab.url,error:error.message});}}
+      await fetch('http://127.0.0.1:27121/result?token='+task.key.split(':')[1],{method:'POST',body:JSON.stringify({message:'已读取 QOJ 页面结构',pages,final:true,ok:pages.length>0}),signal:AbortSignal.timeout(4000)});return;
+    }
+    if(task.oj==='qoj'&&task.action==='qoj-audit'){
+      const pages=[],tabs=await chrome.tabs.query({url:'https://qoj.ac/*'});let downloaded=false,reader;
+      const urls=Array.from(new Set(tabs.map(tab=>tab.url).filter(Boolean)));
+      try{for(const url of urls){
+        try{
+          if(reader)await chrome.tabs.update(reader.id,{url,active:true});else reader=await chrome.tabs.create({url,active:true});
+          const tab={id:reader.id,url};
+          await fetch('http://127.0.0.1:27121/result?token='+task.key.split(':')[1],{method:'POST',body:JSON.stringify({message:'正在核验 QOJ 读取器：'+tab.url})});
+          const result=await qojReadTab(tab.id,expected=>{
+            if(qojBlocked(document))return {error:'页面需要登录或验证'};
+            if(location.pathname.replace(/\/$/,'')!==new URL(expected).pathname.replace(/\/$/,''))return {waiting:true};
+            if(qojDashboard(location.href))return {dashboard:readQojDashboard()};
+            if(/^\/submission\//.test(location.pathname))return {judgement:readQojJudgement()};
+            if(/^\/results\//.test(location.pathname)){const link=Array.from(document.querySelectorAll('a[href]')).map(a=>{try{return qojDashboard(new URL(a.getAttribute('href'),location.href).href);}catch{return null;}}).find(Boolean);return link?readQojExternalStandings({contest:link.contest}):{error:'没有比赛链接'};}
+            try{qojTarget(location.href);const page=readQojProblemPage(),source=qojSourceForm();if(source.form)page.sourceContract={base:source.base,radioValues:Array.from(source.form.querySelectorAll('input[type="radio"]')).map(input=>input.value),fileField:source.file?.name,editorField:source.editor?.name,languages:Array.from(source.language?.options||[]).map(option=>option.value)};return page;}catch{return {submissions:qojSubmissionRows()};}
+          },[url]);
+          if(result?.problem&&!downloaded){result.downloaded=await qojCollectProblem(tab.id,tab.url);downloaded=true;}
+          pages.push({url:tab.url,result});
+        }catch(error){pages.push({url,error:error.message});}
+      }}finally{if(reader?.id)await chrome.tabs.remove(reader.id).catch(()=>{});}
+      await fetch('http://127.0.0.1:27121/result?token='+task.key.split(':')[1],{method:'POST',body:JSON.stringify({message:'QOJ 页面读取器核验已结束',pages,final:true,ok:pages.some(page=>page.result&&!page.result.error)}),signal:AbortSignal.timeout(10000)});return;
+    }
+    if(task.oj==='qoj'){
+      if(task.contest!==null&&task.contest!==undefined&&!/^[1-9]\d*$/.test(task.contest))return;
+      if(task.action==='open-standings'){
+        let result;try{if(!task.contest)throw Error('QOJ 比赛编号缺失。');const standings=await openQojStandingsTab(task);result={message:'已读取 QOJ External Standings 完整榜单。',standings,final:true,ok:true};}catch(error){result={message:error.message,final:true,ok:false};}
+        await fetch('http://127.0.0.1:27121/result?token='+task.key.split(':')[1],{method:'POST',body:JSON.stringify(result),signal:AbortSignal.timeout(4000)});return;
+      }
+      if(task.action||! /^[1-9]\d*$/.test(task.problem))return;
+      await chrome.tabs.create({active:false,url:'https://qoj.ac/'+(task.contest?'contest/'+task.contest+'/':'')+'submissions#qojhelper='+task.key});return;
+    }
+    if(! /^[1-9]\d*$/.test(task.contest))return;
     if(task.action==='open-standings'){
       if(!['contest','gym'].includes(task.section))return;
       let result;
@@ -39,8 +76,8 @@ chrome.storage.onChanged?.addListener((changes,area)=>{
 });
 async function restoreShortcuts(){
   if(!chrome.scripting?.executeScript||!chrome.tabs?.query)return;
-  const tabs=await chrome.tabs.query({url:['https://codeforces.com/*','https://www.codeforces.com/*']});
-  await Promise.allSettled(tabs.filter(tab=>Number.isInteger(tab.id)).map(tab=>chrome.scripting.executeScript({target:{tabId:tab.id},files:['problem.js','samples.js','statement.js','open-settings.js','dashboard.js','shortcut.js']})));
+  const tabs=await chrome.tabs.query({url:['https://codeforces.com/*','https://www.codeforces.com/*','https://qoj.ac/*']});
+  await Promise.allSettled(tabs.filter(tab=>Number.isInteger(tab.id)).map(tab=>chrome.scripting.executeScript({target:{tabId:tab.id},files:[...(tab.url?.startsWith('https://qoj.ac/')?['qoj.js','qoj-page.js','qoj-worker.js']:[]),'problem.js','samples.js','statement.js','open-settings.js','dashboard.js','shortcut.js']})));
 }
 function start(){poll();connectWakeup();restoreShortcuts().catch(()=>{});}
 async function recoverAfterUpdate(details){
@@ -64,6 +101,14 @@ async function recoverAfterUpdate(details){
 chrome.runtime.onStartup.addListener(start);
 chrome.runtime.onInstalled.addListener(details=>{start();recoverAfterUpdate(details).catch(()=>{});});start();
 chrome.runtime.onMessage.addListener((m,s,reply)=>{
+  if(m.action==='qoj-add'){
+    (async()=>{
+      const source=s.tab||((s.url===chrome.runtime.getURL('popup.html')&&Number.isInteger(m.tabId))?await chrome.tabs.get(m.tabId):null);
+      if(!source)throw Error('QOJ 添加来源无效。');
+      const url=s.tab?s.url:source.url;if(!qojDashboard(url))qojTarget(url);
+      return qojAddFromTab(source.id,url);
+    })().then(reply).catch(error=>reply({error:error.message}));return true;
+  }
   if(m.action==='cfhelper-add-dashboard'){
     (async()=>{
       const source=s.tab||((s.url===chrome.runtime.getURL('popup.html')&&Number.isInteger(m.tabId))?await chrome.tabs.get(m.tabId):null);
@@ -85,7 +130,8 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
     })().then(reply).catch(e=>reply({error:e.message}));return true;
   }
   if(m.poll&&s.url===chrome.runtime.getURL('options.html')){poll();connectWakeup();reply({});return;}
-  if(!s.url?.startsWith('https://codeforces.com/')||!/^27121:[a-f0-9]{48}$/.test(m.key))return;
+  const qojSource=m.oj==='qoj'&&s.url?.startsWith('https://qoj.ac/');
+  if((!qojSource&&!s.url?.startsWith('https://codeforces.com/'))||!/^27121:[a-f0-9]{48}$/.test(m.key))return;
   (async()=>{
     if(m.attention&&s.tab){await chrome.tabs.update(s.tab.id,{active:true});await chrome.windows.update(s.tab.windowId,{focused:true});}
     const [port,token]=m.key.split(':');

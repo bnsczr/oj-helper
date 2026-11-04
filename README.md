@@ -1,12 +1,26 @@
 # oj-helper
 
-Codeforces 题目导入、代码提交、题面与好友榜单助手，包含浏览器扩展、命令行工具和配套 VS Code 扩展。
+Codeforces / QOJ 题目导入、代码提交、题面与榜单助手，包含浏览器扩展、命令行工具和配套 VS Code 扩展。
 
 [GitHub 仓库](https://github.com/bnsczr/oj-helper)
 
+## 选择 OJ
+
+```powershell
+oj CF
+oj qoj
+oj
+```
+
+`oj CF` 切换为 Codeforces helper，`oj qoj` 切换为 QOJ helper，两种模式都使用 `submit A.cpp`、`open s`、`open b` 等命令。单独运行 `oj` 查看当前选择及用法，OJ 名称不区分大小写。
+
+首次使用默认 Codeforces。选择保存在本机偏好中，重启终端后仍然生效。两站分别保存题号关联、题面记录、文件序号和语言偏好，clear 只清当前站点。切回 `oj CF` 后原有 CF 记录仍可继续使用。浏览器添加题目根据当前网页识别站点，提交与 open 按命令行选择的 OJ 执行。
+
+已将项目目录加入 Path 的 Windows 用户可以直接使用 `oj`；通过 npm 安装或链接时也会提供同名入口。在项目目录也可运行 `node oj.js CF` 或 `node oj.js qoj`。
+
 ## 新建与添加题目
 
-浏览器扩展更新到 **1.13.1** 后，打开 Codeforces 题目页，点击工具栏 + 或在正文按 **Shift+N**。页面立即显示“正在添加…”，完成后显示分配的文件名、默认提交题号和路径。
+浏览器扩展更新到 **1.14.3** 后，打开 Codeforces / QOJ 题目页，点击工具栏 + 或在正文按 **Shift+N**。页面立即显示“正在添加…”，完成后显示分配的文件名、默认提交题号和路径。
 
 不同题目在每个保存目录中依次分配 `A.cpp`、`B.cpp`、`C.cpp`……，Z 之后为 AA、AB。重复添加同一题复用已分配文件；同名文件已存在时直接覆盖，并写入扩展设置中的初始内容，同时更新题号。提交 `A.cpp` 和 `B.cpp` 时分别使用各自记住的题号。未关联的文件沿用最近设置的默认题号，确认处会显示目标；c 可修改并永久保存当前文件的题号。
 
@@ -22,7 +36,7 @@ submit 'clear()'
 
 ## 安装与设置
 
-1. 安装 Node.js 18+，在 Chrome / Edge 扩展管理页加载本项目的 `extension` 文件夹，并允许扩展访问 Codeforces 页面。
+1. 安装 Node.js 18+，在本项目目录运行 `npm ci`。在 Chrome / Edge 扩展管理页加载本项目的 `extension` 文件夹，并允许扩展访问 Codeforces 和 QOJ 页面。
 2. 将本项目目录加入 Windows 用户 Path，或者在本目录通过 `node cli.js` 使用下面命令。`oj-helper` 与 `submit` 使用同一命令入口，例如 `oj-helper A.cpp`。
 3. 运行 `submit --pair`，将配对码粘贴到扩展设置并保存。不要分享 `.bridge-secret` 或配对码。
 4. 扩展设置中填写已有保存目录的绝对路径，例如 `E:\code`；不提供默认保存目录。
@@ -47,9 +61,9 @@ submit B.cpp --lang 'GNU G++23'
 
 ## 检查
 
-运行 `node --test`。测试包括文件分配与模板覆盖、清空与重置、逐文件默认题号、并发分配、快捷键状态、配对认证、提交结果及 checker 解析，以及真实无窗口启动器在消息输入保持开启时的文件创建和返回。尚未在真实浏览器完成本版全流程验证。
+先运行 `npm ci` 安装依赖，再运行 `node --test`。QOJ PDF 全文转换使用本地 PDF.js 和 canvas 依赖，首次使用或更新项目后也应运行一次 `npm ci`；无需额外安装 Python 或系统 PDF 工具。测试包括文件分配与模板覆盖、双 OJ 记录隔离、清空与重置、逐文件默认题号、快捷键状态、配对认证、评测结果与 checker 解析、QOJ PDF 全文和 ZIP 样例及超过 1 MiB 附件的真实无窗口启动器传输。
 
-配套 `vscode-extension` 的 + 仍使用原来的手动输入完整题号流程。
+配套 `vscode-extension` 的 + 保留手动输入题号流程，跟随 oj 选择接受 CF 完整题号或 QOJ 数字题号/题目网址。
 
 
 ## 新建文件初始内容
@@ -123,4 +137,29 @@ open b
 升级时运行一次 `submit --install-native` 更新启动器，然后在扩展管理页重新加载本扩展至 1.13.0。本机助手随扩展连接自动启动并等待通知，浏览器连接关闭后退出，不需常驻终端或 `submit --serve-files`。通知连接未就绪时保留原定时领取作为备用。
 
 任务领取使用经过配对认证的本机管道；不会为了提速增加 Codeforces 抓取请求。y/n/c 确认、账号/题号/编译器/新提交编号核对和 checker 返回均保留。网站加载、登录验证和评测队列的耗时由网站决定。
+
+## QOJ 使用与已确认的差异
+
+升级至 1.14.3 后运行一次 `submit --install-native` 更新本机消息启动器，并重新加载浏览器扩展。已安装 v5 本机启动器的用户只需重新加载扩展。
+
+```powershell
+oj qoj
+submit A.cpp
+submit A.cpp --lang 'C++20'
+open s
+open b
+submit clear
+```
+
+- 在 QOJ 题目页点击 + 或按 Shift+N，顺序创建 A.cpp、B.cpp；在比赛 Dashboard 添加时，以比赛字母题号批量创建文件，并分别关联真实 QOJ 数字题号及比赛上下文。
+- QOJ 没有 CF 的“所有题目”聚合页。批量导入复用一个后台标签页依次读取各题，全部读取完成后才写入，最长等待 15 分钟。
+- C++ 首次默认 QOJ 的 C++23；语言偏好与 CF 分开记忆。c 可输入 QOJ 数字题号或题目网址，例如 `123`、`https://qoj.ac/problem/123` 或 `https://qoj.ac/contest/42/problem/123`。
+- HTML 题面直接写入 statement.md；PDF 题面逐页提取完整正文（包括题目描述、输入输出和约束），同时保存 `statements/QOJ-题号.pdf` 原件和各页 PNG，并在 Markdown 中嵌入可展开的原始页面，保留公式及插图的完整排版。没有文字层的扫描页直接嵌入整页图像并提示。样例从 HTML 或官方 ZIP 附件读取，写入 Markdown 并追加到源码注释。不能完整解析样例时明确显示警告，不声称样例完整。每个下载资源最多 16 MiB，超过整场消息容量时提示分题添加。
+- 旧版仅记录 PDF 链接和样例的导入记录，运行 `open s` 时会从已保存的 PDF 自动补全正文并缓存。无需重新点击 +，不会覆盖已经编写的 C++ 源码。PDF 全文转换失败时明确报错，不把仅有样例的文件当作完整题面。
+- 本次仅支持单文件源码题；多文件题与提交答案题在导入/提交前明确报错。沿用现有模板、覆盖规则、VS Code 打开开关和 10 秒完成提示。
+- 提交通过正常 QOJ 表单完成，记录提交前编号，只点击一次 Submit；在提交详情核对账号、题号、语言和新编号后读取原始结果、分数、耗时及内存。
+- checker 只读取最后一个普通 **Test**，忽略 Extra Test，并标注 Test 编号。比赛权限或 Training Mode 隐藏对应详情时显示“无法得知结果”，不改变网站模式。
+- open b 新开标签，按比赛 Dashboard 中真实的 **Extra/External Standings** 入口打开并导出完整原始表格。没有入口或权限时报告原因，不换成普通榜单；题库题缺少比赛上下文时，先在终端选择/输入比赛编号。
+
+开发诊断：`node qoj-inspect.js` 只读采集已打开的 QOJ 页面结构，`node qoj-inspect.js --audit` 核验读取器和一题的官方 PDF/样例附件。结果仅保存为已忽略的 `.qoj-inspection*.json`，不上传 Git；诊断不提交代码。
 

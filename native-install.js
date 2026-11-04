@@ -25,7 +25,7 @@ function installNative(ids=detectExtensionIds()){
  if(!ids.length)throw Error('没有检测到扩展。请在扩展设置查看连接安装命令，运行 submit --install-native 扩展ID。');
  if(ids.some(id=>!/^[a-p]{32}$/.test(id)))throw Error('扩展 ID 应为 32 位 a-p 字符。');
  const directory=path.join(__dirname,'.native-host');fs.mkdirSync(directory,{recursive:true});
- const executable=path.join(directory,'launcher-v4.exe'),manifestPath=path.join(directory,hostName+'.json');
+ const executable=path.join(directory,'launcher-v5.exe'),manifestPath=path.join(directory,hostName+'.json');
  if(!fs.existsSync(executable)||fs.statSync(executable).mtimeMs<fs.statSync(path.join(__dirname,'native-launcher.cs')).mtimeMs){
   const compiler=path.join(process.env.WINDIR||'C:/Windows','Microsoft.NET/Framework64/v4.0.30319/csc.exe');
   const result=spawnSync(compiler,['/nologo','/target:winexe','/out:'+executable,path.join(__dirname,'native-launcher.cs')],{encoding:'utf8',windowsHide:true});

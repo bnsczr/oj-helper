@@ -2,6 +2,11 @@
 const fs=require('node:fs/promises'),path=require('node:path');
 function validateStandings(snapshot,addition){
  const s=snapshot;
+ if(addition.oj==='qoj'){
+  if(!s||s.oj!=='qoj'||s.kind!=='external-standings'||s.contest!==addition.contest||s.contestUrl!=='https://qoj.ac/contest/'+addition.contest||!Array.isArray(s.headers)||!s.headers.length||!s.headers.every(cell=>typeof cell==='string')||!Array.isArray(s.rows)||!s.rows.every(row=>Array.isArray(row)&&row.every(cell=>typeof cell==='string')))throw Error('QOJ External Standings 数据不完整或比赛不匹配，未保存。');
+  let url;try{url=new URL(s.url);}catch{throw Error('QOJ 榜单网址无效。');}
+  if(url.origin!=='https://qoj.ac'||url.username||url.password||!/^\/results\/[A-Za-z0-9_-]+\/?$/.test(url.pathname))throw Error('返回的不是 QOJ External Standings，未保存。');return;
+ }
  if(!s||s.kind!=='friends-standings'||s.contest!==addition.contest||s.section!==(addition.section||'contest')||!Array.isArray(s.headers)||!s.headers.length||!s.headers.every(cell=>typeof cell==='string')||!Array.isArray(s.rows)||!s.rows.every(row=>Array.isArray(row)&&row.every(cell=>typeof cell==='string')))throw Error('好友榜单数据不完整，请更新扩展后重新运行 open b。');
  let url;try{url=new URL(s.url);}catch{throw Error('好友榜单网址无效。');}
  const expected='/'+s.section+'/'+s.contest+'/standings/friends/true';
@@ -11,10 +16,11 @@ function renderStandings(snapshot){
  const escape=value=>String(value||'').replace(/\\/g,'\\\\').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\|/g,'&#124;').replace(/([*_`\[\]])/g,'\\$1').replace(/\r\n?|\n/g,'<br>');
  const width=Math.max(snapshot.headers.length,...snapshot.rows.map(row=>row.length));
  const row=cells=>'| '+Array.from({length:width},(_,index)=>escape(cells[index])).join(' | ')+' |';
- let markdown='# '+escape(snapshot.title||'Friends standings')+'\n\n';
- markdown+='[Friends standings]('+snapshot.url+')\n\n';
+ const name=snapshot.oj==='qoj'?'External Standings':'Friends standings';
+ let markdown='# '+escape(snapshot.title||name)+'\n\n';
+ markdown+='['+name+']('+snapshot.url+')\n\n';
  if(snapshot.description)markdown+=escape(snapshot.description)+'\n\n';
- markdown+='当前账号：'+escape(snapshot.handle||'-')+'  \nShow unofficial：'+(snapshot.showUnofficial?'开启':'关闭')+'  \n读取时间：'+escape(snapshot.capturedAt||'')+'\n\n';
+ markdown+='当前账号：'+escape(snapshot.handle||'-')+'  \n'+(snapshot.oj==='qoj'?'':'Show unofficial：'+(snapshot.showUnofficial?'开启':'关闭')+'  \n')+'读取时间：'+escape(snapshot.capturedAt||'')+'\n\n';
  markdown+=row(snapshot.headers)+'\n'+row(Array(width).fill('---'))+'\n'+snapshot.rows.map(row).join('\n')+'\n';
  if(!snapshot.rows.length)markdown+='\n本页暂无榜单数据。\n';
  const pages=(snapshot.pages||[]).filter(page=>{

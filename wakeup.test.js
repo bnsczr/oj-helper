@@ -56,8 +56,8 @@ test('持续本机连接支持多次即时通知，浏览器断开后退出且�
 });
 
 test('真实无窗口启动器持续转发通知，关闭浏览器输入即可清理助手',async t=>{
- const installed=path.join(__dirname,'.native-host','launcher-v4.exe');
- if(process.platform!=='win32'||!sync.existsSync(installed))return t.skip('未编译 Windows v4 启动器');
+ const installed=path.join(__dirname,'.native-host','launcher-v5.exe');
+ if(process.platform!=='win32'||!sync.existsSync(installed))return t.skip('未编译 Windows v5 启动器');
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'cf-watch-launcher-')),secretFile=path.join(directory,'secret'),secret=crypto.randomBytes(32).toString('hex');
  try{
   const native=path.join(directory,'.native-host');await fs.mkdir(native);

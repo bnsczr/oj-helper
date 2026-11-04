@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "oj-helper",
-  "version": "1.13.1",
+  "version": "1.14.3",
   "minimum_chrome_version": "120",
   "permissions": [
     "storage",
@@ -13,11 +13,12 @@
   "host_permissions": [
     "http://127.0.0.1/*",
     "https://codeforces.com/*",
-    "https://www.codeforces.com/*"
+    "https://www.codeforces.com/*",
+    "https://qoj.ac/*"
   ],
   "options_page": "options.html",
   "action": {
-    "default_title": "+ 新建当前 Codeforces 题目文件",
+    "default_title": "+ 新建当前 OJ 题目文件",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "plus16.png",
@@ -31,9 +32,13 @@
     {
       "matches": [
         "https://codeforces.com/*",
-        "https://www.codeforces.com/*"
+        "https://www.codeforces.com/*",
+        "https://qoj.ac/*"
       ],
       "js": [
+        "qoj.js",
+        "qoj-page.js",
+        "qoj-worker.js",
         "problem.js",
         "samples.js",
         "statement.js",
@@ -46,12 +51,14 @@
     {
       "matches": [
         "https://codeforces.com/*",
-        "https://www.codeforces.com/*"
+        "https://www.codeforces.com/*",
+        "https://qoj.ac/*"
       ],
       "js": [
         "languages.js",
         "verdict.js",
-        "content.js"
+        "content.js",
+        "qoj-content.js"
       ]
     }
   ]

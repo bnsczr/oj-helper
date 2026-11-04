@@ -32,7 +32,7 @@ test('浏览器消息的二进制分帧及错误回传无额外输出',async()=>
  const result=await invoke(process.execPath,[path.join(__dirname,'native-host.js')],encode({action:'create',secret:'not-paired'}));assert.ok(result.error);
 });
 test('已编译的无窗口启动器可传递浏览器消息',async t=>{
- const launcher=path.join(__dirname,'.native-host','launcher-v4.exe');try{await fs.access(launcher);}catch{return t.skip('未编译启动器');}
+ const launcher=path.join(__dirname,'.native-host','launcher-v5.exe');try{await fs.access(launcher);}catch{return t.skip('未编译启动器');}
  const result=await invoke(launcher,[],encode({action:'create',secret:'not-paired'}),true);assert.ok(result.error);
 });
 test('自动检测扩展只返回本助手 ID',async()=>{
@@ -44,7 +44,7 @@ test('自动检测扩展只返回本助手 ID',async()=>{
 });
 
 test('真实启动器保持浏览器输入开启也能完成创建并返回题号',async t=>{
- const executable=path.join(__dirname,'.native-host','launcher-v4.exe');try{await fs.access(executable);}catch{return t.skip('未编译启动器');}
+ const executable=path.join(__dirname,'.native-host','launcher-v5.exe');try{await fs.access(executable);}catch{return t.skip('未编译启动器');}
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'cf-native-live-'));try{
   const launcherDir=path.join(dir,'.native-host');await fs.mkdir(launcherDir);const launcher=path.join(launcherDir,'launcher-v3.exe');await fs.copyFile(executable,launcher);await fs.writeFile(path.join(launcherDir,'node-path.txt'),process.execPath);
   const secretFile=path.join(dir,'secret'),stateFile=path.join(dir,'prefs.json');await fs.writeFile(secretFile,'paired');

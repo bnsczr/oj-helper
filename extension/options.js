@@ -27,3 +27,11 @@ document.querySelector('#saveStandings').onclick=async()=>{
  try{await chrome.storage.local.set({standingsShowUnofficial:document.querySelector('#standingsShowUnofficial').checked});document.querySelector('#standingsStatus').textContent='榜单设置已保存，下次运行 open b 时生效。';}
  catch(error){document.querySelector('#standingsStatus').textContent='保存失败：'+error.message;}
 };
+Promise.resolve(chrome.runtime.sendMessage({poll:true})).catch(()=>{});
+if(typeof fetch==='function'&&typeof AbortSignal!=='undefined'){
+ (async()=>{
+  const status=document.querySelector('#connectionStatus'),{bridgeSecret}=await chrome.storage.local.get('bridgeSecret');if(!bridgeSecret)return;
+  try{const response=await fetch('http://127.0.0.1:27121/health',{headers:{Authorization:'Bearer '+bridgeSecret,'X-Oj-Helper-Platforms':'cf,qoj'},signal:AbortSignal.timeout(3000)});if(status)status.textContent=response.ok?'本机连接正常，已通知后台检查任务。':response.status===403?'本机配对不匹配，请重新保存 submit --pair 显示的配对码。':'本机正在处理其他连接。';}
+  catch{if(status)status.textContent='本机当前没有等待中的提交或诊断任务。';}
+ })();
+}

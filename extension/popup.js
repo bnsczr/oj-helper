@@ -9,6 +9,11 @@ document.querySelector('#settings').onclick=()=>chrome.runtime.openOptionsPage()
  status.textContent='正在添加…';
  try{
   const [tab]=await chrome.tabs.query({active:true,currentWindow:true});const dashboard=dashboardFromUrl(tab?.url);
+  if(tab?.url?.startsWith('https://qoj.ac/')){
+   status.textContent='正在添加：读取 QOJ 题面、PDF 及样例附件…';
+   const data=await waitForAdd(chrome.runtime.sendMessage({action:'qoj-add',tabId:tab.id}),900000);
+   if(!data||data.error)throw Error(data?.error||'QOJ 添加失败。');status.textContent=qojAdditionSummary(data);return;
+  }
   if(dashboard){
    status.textContent='正在添加比赛全部题目及样例…';
    await chrome.scripting.executeScript({target:{tabId:tab.id},files:['problem.js','dashboard.js']});

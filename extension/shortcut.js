@@ -18,8 +18,9 @@ function waitForAdd(request,duration=30000){
   if(!event.shiftKey||event.ctrlKey||event.altKey||event.metaKey||event.repeat||event.isComposing||!(event.code==='KeyN'||event.key?.toLowerCase()==='n'))return;
   const targets=event.composedPath?.()||[event.target];
   if(targets.some(target=>target?.isContentEditable||target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], .CodeMirror, .ace_editor, .monaco-editor')))return;
-  const dashboard=dashboardFromUrl(location.href);
-  if(!dashboard)try{problemFromUrl(location.href);}catch{return;}
+  const isQoj=location.href.startsWith('https://qoj.ac/');
+  const dashboard=isQoj?qojDashboard(location.href):dashboardFromUrl(location.href);
+  if(!dashboard)try{if(isQoj)qojTarget(location.href);else problemFromUrl(location.href);}catch{return;}
   // An old isolated world can outlive an extension reload. It must release
   // the key before stopImmediatePropagation so the fresh listener can run.
   try{if(!chrome.runtime?.id){window.removeEventListener('keydown',onKey,true);return;}}
@@ -27,6 +28,11 @@ function waitForAdd(request,duration=30000){
   event.preventDefault();event.stopImmediatePropagation();if(busy)return;busy=true;
   show('正在添加…');
   try{
+   if(isQoj){
+    show(dashboard?'正在添加 QOJ 比赛全部题目、PDF 和样例…':'正在添加 QOJ 题面、PDF 和样例…');
+    const data=await waitForAdd(chrome.runtime.sendMessage({action:'qoj-add'}),dashboard?900000:120000);
+    if(!data||data.error)throw Error(data?.error||'QOJ 添加失败。');show(qojAdditionSummary(data));return;
+   }
    if(dashboard){
     show('正在添加比赛全部题目及样例…');
     const data=await waitForAdd(chrome.runtime.sendMessage({action:'cfhelper-add-dashboard',problems:readDashboard(document,location.href)}),150000);

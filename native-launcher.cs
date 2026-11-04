@@ -21,7 +21,7 @@ class NativeLauncher {
     child.ErrorDataReceived+=(s,e)=>{}; child.BeginErrorReadLine();
     var input=Console.OpenStandardInput();
     var header=ReadExact(input,4);int length=BitConverter.ToInt32(header,0);
-    if(length<0||length>1048576){child.Kill();return 1;}
+    if(length<0||length>64*1024*1024){child.Kill();return 1;}
     var payload=ReadExact(input,length);
     child.StandardInput.BaseStream.Write(header,0,header.Length);
     child.StandardInput.BaseStream.Write(payload,0,payload.Length);
