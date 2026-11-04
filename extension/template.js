@@ -1,0 +1,2 @@
+const DEFAULT_INITIAL_CONTENT="#include<bits/stdc++.h>\n#define int long long\nusing namespace std;\nconst int MAXN = 2e6 + 15;\nint n;\nint cnt;\nint head[MAXN];\nvoid solve(){\n    return ;\n}\nsigned main(){\n    ios::sync_with_stdio(false);cin.tie(0);cout.tie(0);\n    int t = 1;\n    cin >> t;\n    while(t --){\n        solve();\n    }\n    return 0;\n}\n";
+if(typeof module!=='undefined')module.exports={DEFAULT_INITIAL_CONTENT};

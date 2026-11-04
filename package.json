@@ -1,0 +1,1 @@
+{"name":"codeforces-helper-local","version":"1.0.0","private":true,"bin":{"submit":"cli.js","open":"open.js","codeforces-helper":"cli.js"},"scripts":{"test":"node --test"},"engines":{"node":">=18"}}

@@ -1,0 +1,9 @@
+.bridge-secret
+node_modules/
+
+.submit-preferences.json
+.submit-preferences.json.*.tmp
+
+.native-host/
+
+.submit-preferences.json.lock

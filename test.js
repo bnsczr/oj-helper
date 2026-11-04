@@ -1,0 +1,4 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const {parse}=require('./cli');
+const {selectLanguage}=require('./extension/languages');
+test('匹配网页 GNU G++ 名称及显式版本',()=>{const opts=['GNU G++23 14.2 (64 bit, msys2)','GNU G++17 7.3.0','GNU GCC C11 5.1.0'].map((textContent,i)=>({textContent,value:String(i+1)}));assert.equal(selectLanguage(opts,'C++'),opts[1]);assert.equal(selectLanguage(opts.slice(0,1),'C++'),opts[0]);assert.equal(selectLanguage(opts,'GNU G++23'),opts[0]);assert.equal(selectLanguage(opts,'C'),opts[2]);assert.equal(selectLanguage(opts,'Python'),undefined);});
+test('题号和语言解析',()=>{assert.deepEqual(parse('1A.cpp'),{contest:'1',problem:'A',language:'C++'});assert.equal(parse('123b1.py').problem,'B1');for(const f of ['A.cpp','0A.cpp','1A.exe'])assert.throws(()=>parse(f));});

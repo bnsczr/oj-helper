@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Codeforces Helper 配对</title><body>
+<h2>连接 VS Code 终端</h2><p>先在终端运行 submit --pair，将显示的配对码粘贴到这里。</p>
+<label>配对码 <input id="secret" type="password" size="65"></label><button id="save">保存</button><p id="status"></p>
+<h2>新建题目文件</h2><p>保存目录需填写已有文件夹的绝对路径，没有默认路径。例：E:\code\CF</p>
+<label>保存目录 <input id="directory" type="text" size="65" placeholder="请填写绝对路径"></label><button id="saveDirectory">保存目录</button><p id="directoryStatus" role="status"></p>
+<p>只需一次性安装浏览器连接，之后点击 + 会自动启动助手，依次分配 A.cpp、B.cpp 等文件并更新对应题号，无需常驻终端。</p><p>在终端运行一次：<code id="nativeInstall"></code></p>
+<h2>新建文件的初始内容</h2><p>点击 + 或按 Shift+N 添加题目时，会覆盖已有同名文件并写入以下内容。Dashboard 会批量创建题号对应的文件，并附上各题样例。留空并保存可创建空文件。</p>
+<textarea id="initialContent" rows="22" cols="85" spellcheck="false" style="font-family:Consolas,monospace;max-width:100%;tab-size:4"></textarea><br>
+<button id="saveInitialContent">保存初始内容</button><button id="resetInitialContent">恢复默认内容</button><p id="initialContentStatus" role="status"></p>
+<h2>添加后自动在 VS Code 打开</h2>
+<fieldset><legend>Dashboard 页面</legend>
+<label><input id="dashboardCpp" type="checkbox">打开全部 C++ 文件（默认开启）</label><br>
+<label><input id="dashboardStatement" type="checkbox">保存并打开整场 statement.md（默认开启）</label></fieldset>
+<fieldset><legend>题目页面</legend>
+<label><input id="problemCpp" type="checkbox">打开该题 C++ 文件（默认开启）</label><br>
+<label><input id="problemStatement" type="checkbox">保存并打开该题 statement.md（默认关闭）</label></fieldset>
+<p>四个开关互相独立。关闭 C++ 自动打开仍会创建文件；关闭题面自动打开后，可随时用 open s 保存并打开题面。</p>
+<button id="saveOpenAfterAdd">保存自动打开设置</button><p id="openAfterAddStatus" role="status"></p>
+<h2>open b 好友榜单</h2>
+<label><input id="standingsShowUnofficial" type="checkbox">包含非正式参赛者（Show unofficial，默认开启）</label>
+<p>直接打开 Friends standings，读取该页完整榜单并保存为 standings.md，在 VS Code 中打开。保留所有行、全部题目列、排名、罚时或得分及评分变化，比赛结束后同样完整保留。开启上方选项时包含非正式参赛者。</p>
+<button id="saveStandings">保存榜单设置</button><p id="standingsStatus" role="status"></p>
+<h2>添加题目快捷键</h2><p>在 Codeforces 题目页或比赛 Dashboard 按 Shift+N，执行与 + 相同的添加操作，页面提示“正在添加…”和“更新完成”。输入框或代码编辑器中不触发，以免影响输入大写 N。更新扩展后请刷新题目页。</p>
+<script src="template.js"></script><script src="open-settings.js"></script><script src="options.js"></script></body></html>
