@@ -1,8 +1,12 @@
-# codeforces helper
+# oj-helper
+
+Codeforces 题目导入、代码提交、题面与好友榜单助手，包含浏览器扩展、命令行工具和配套 VS Code 扩展。
+
+[GitHub 仓库](https://github.com/bnsczr/oj-helper)
 
 ## 新建与添加题目
 
-浏览器扩展更新到 **1.13.0** 后，打开 Codeforces 题目页，点击工具栏 + 或在正文按 **Shift+N**。页面立即显示“正在添加…”，完成后显示分配的文件名、默认提交题号和路径。
+浏览器扩展更新到 **1.13.1** 后，打开 Codeforces 题目页，点击工具栏 + 或在正文按 **Shift+N**。页面立即显示“正在添加…”，完成后显示分配的文件名、默认提交题号和路径。
 
 不同题目在每个保存目录中依次分配 `A.cpp`、`B.cpp`、`C.cpp`……，Z 之后为 AA、AB。重复添加同一题复用已分配文件；同名文件已存在时直接覆盖，并写入扩展设置中的初始内容，同时更新题号。提交 `A.cpp` 和 `B.cpp` 时分别使用各自记住的题号。未关联的文件沿用最近设置的默认题号，确认处会显示目标；c 可修改并永久保存当前文件的题号。
 
@@ -19,7 +23,7 @@ submit 'clear()'
 ## 安装与设置
 
 1. 安装 Node.js 18+，在 Chrome / Edge 扩展管理页加载本项目的 `extension` 文件夹，并允许扩展访问 Codeforces 页面。
-2. 将本项目目录加入 Windows 用户 Path，或者在本目录通过 `node cli.js` 使用下面命令。
+2. 将本项目目录加入 Windows 用户 Path，或者在本目录通过 `node cli.js` 使用下面命令。`oj-helper` 与 `submit` 使用同一命令入口，例如 `oj-helper A.cpp`。
 3. 运行 `submit --pair`，将配对码粘贴到扩展设置并保存。不要分享 `.bridge-secret` 或配对码。
 4. 扩展设置中填写已有保存目录的绝对路径，例如 `E:\code`；不提供默认保存目录。
 5. 运行一次 `submit --install-native`；无法自动检测时，使用扩展设置提供的带 ID 安装命令。浏览器会按需启动无窗口助手，完成操作后退出，不需要 `submit --serve-files` 或常驻终端。

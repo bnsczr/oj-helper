@@ -14,12 +14,12 @@ function createCommands(vscode,io=fs){
   try{
    const directory=vscode.workspace.getConfiguration('codeforcesHelper').get('directory');
    if(typeof directory!=='string'||!directory.trim()){
-    const action=await vscode.window.showWarningMessage('尚未设置题目文件保存目录，请先在 Codeforces Helper 设置中填写目录。','打开设置');
+    const action=await vscode.window.showWarningMessage('尚未设置题目文件保存目录，请先在 oj-helper 设置中填写目录。','打开设置');
     if(action==='打开设置')await settings();return;
    }
-   if(!path.isAbsolute(directory))throw Error('保存目录必须是绝对路径，例如 E:\\code\\CF。请修改 Codeforces Helper 设置。');
+   if(!path.isAbsolute(directory))throw Error('保存目录必须是绝对路径，例如 E:\\code\\CF。请修改 oj-helper 设置。');
    let info;try{info=await io.stat(directory);}catch(e){if(e.code==='ENOENT')throw Error('设置的保存目录不存在，请先创建目录或修改设置。');throw e;}
-   if(!info.isDirectory())throw Error('设置的保存路径不是文件夹，请修改 Codeforces Helper 设置。');
+   if(!info.isDirectory())throw Error('设置的保存路径不是文件夹，请修改 oj-helper 设置。');
    const input=await vscode.window.showInputBox({title:'新建 Codeforces 题目文件',prompt:'输入题号，将创建 题号.cpp',placeHolder:'例如 2278F',validateInput:value=>{try{problemName(value);return null;}catch(e){return e.message;}}});
    if(input===undefined)return;
    const name=problemName(input),target=path.join(directory,name);let existed=false;

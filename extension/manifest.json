@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Codeforces Helper Local",
-  "version": "1.13.0",
+  "name": "oj-helper",
+  "version": "1.13.1",
   "minimum_chrome_version": "120",
   "permissions": [
     "storage",

@@ -35,7 +35,7 @@ async function main(){
  const args=process.argv.slice(2);
  if(args[0]==='clear()'||args[0]==='clear'){await clearDefaults();console.log('已清空所有默认提交题号，新建文件序号已重置为 A.cpp、B.cpp、C.cpp…（已有源码保留）。');return;}
  if(args[0]==='--pair'){console.log('配对码（请勿分享）：\n'+getSecret()+'\n在扩展详情 → 扩展程序选项中粘贴并保存。');return;}
- if(args[0]==='--install-native'){const {installNative}=require('./native-install');const ids=installNative(args.slice(1).length?args.slice(1):undefined);console.log('浏览器本机助手已安装。刷新扩展至 1.13.0 后，可直接点击 + 并即时领取提交任务，无需常驻终端。已连接扩展：'+ids.join('、'));return;}
+ if(args[0]==='--install-native'){const {installNative}=require('./native-install');const ids=installNative(args.slice(1).length?args.slice(1):undefined);console.log('oj-helper 本机助手已安装。刷新扩展至 1.13.1 后，可直接点击 + 并即时领取提交任务，无需常驻终端。已连接扩展：'+ids.join('、'));return;}
  if(args[0]==='--serve-files'){try{await require('./files-server').serveFiles(getSecret());}catch(e){if(e.code==='EADDRINUSE')throw Error('文件助手端口 27122 已被占用；若助手已在运行，无需再次启动。');throw e;}return;}
  if(!args.length||args.includes('--help')){console.log('submit A.cpp [--lang 编译器名称片段]（题号取最近点击 + 或 c 保存的默认题号）\nsubmit clear：清空默认题号并重置文件序号（clear() 请加引号）\nsubmit --pair：显示浏览器扩展配对码\nsubmit --install-native [扩展ID]：一次性连接浏览器自动文件助手（无需常驻终端）\nsubmit --serve-files：旧版文件助手兼容入口\n浏览器需已运行；正常提交在后台完成，结果显示在终端。');return;}
  const state=readPreferences(),file=resolveSourceFile(args[0],state),target=defaultFor(file,state),spec={...(target?parseProblem(target):{}),language:languageFor(file,state)};const source=fs.readFileSync(file,'utf8');if(!source.trim())throw Error('源码为空');

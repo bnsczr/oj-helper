@@ -12,7 +12,7 @@ function detectExtensionIds(local=process.env.LOCALAPPDATA){
     let prefs;try{prefs=JSON.parse(fs.readFileSync(path.join(userData,entry.name,name),'utf8'));}catch{continue;}
     for(const [id,data] of Object.entries(prefs.extensions?.settings||{})){
      if(!/^[a-p]{32}$/.test(id))continue;
-     if(data.manifest?.name==='Codeforces Helper Local')ids.add(id);
+     if(['oj-helper','Codeforces Helper Local'].includes(data.manifest?.name))ids.add(id);
      else if(data.path&&path.resolve(data.path).toLowerCase()===path.join(__dirname,'extension').toLowerCase())ids.add(id);
     }
    }
@@ -34,7 +34,7 @@ function installNative(ids=detectExtensionIds()){
  fs.writeFileSync(path.join(directory,'node-path.txt'),process.execPath,'utf8');
  let existing=[];try{existing=JSON.parse(fs.readFileSync(manifestPath,'utf8')).allowed_origins||[];}catch{}
  const allowed_origins=[...new Set([...existing,...ids.map(id=>'chrome-extension://'+id+'/')])];
- fs.writeFileSync(manifestPath,JSON.stringify({name:hostName,description:'Codeforces Helper file creation',path:executable,type:'stdio',allowed_origins},null,2));
+ fs.writeFileSync(manifestPath,JSON.stringify({name:hostName,description:'oj-helper local integration',path:executable,type:'stdio',allowed_origins},null,2));
  for(const browser of ['Google\\Chrome','Microsoft\\Edge']){
   const result=spawnSync('reg.exe',['ADD','HKCU\\Software\\'+browser+'\\NativeMessagingHosts\\'+hostName,'/ve','/t','REG_SZ','/d',manifestPath,'/f'],{encoding:'utf8',windowsHide:true});
   if(result.error||result.status!==0)throw Error('注册浏览器连接失败：'+(result.error?.message||result.stderr));

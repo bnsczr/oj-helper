@@ -38,8 +38,8 @@ test('已编译的无窗口启动器可传递浏览器消息',async t=>{
 test('自动检测扩展只返回本助手 ID',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'cf-detect-'));try{
  const profile=path.join(dir,'Microsoft/Edge/User Data/Default');await fs.mkdir(profile,{recursive:true});
- const id='a'.repeat(32);await fs.writeFile(path.join(profile,'Secure Preferences'),JSON.stringify({extensions:{settings:{[id]:{manifest:{name:'Codeforces Helper Local'}},['b'.repeat(32)]:{manifest:{name:'Other'}}}}}));
- assert.deepEqual(detectExtensionIds(dir),[id]);
+ const id='a'.repeat(32),legacyId='c'.repeat(32);await fs.writeFile(path.join(profile,'Secure Preferences'),JSON.stringify({extensions:{settings:{[id]:{manifest:{name:'oj-helper'}},[legacyId]:{manifest:{name:'Codeforces Helper Local'}},['b'.repeat(32)]:{manifest:{name:'Other'}}}}}));
+ assert.deepEqual(detectExtensionIds(dir),[id,legacyId]);
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
 

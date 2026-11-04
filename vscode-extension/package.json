@@ -1,20 +1,20 @@
 {
-  "name": "codeforces-helper",
-  "displayName": "Codeforces Helper",
+  "name": "oj-helper",
+  "displayName": "oj-helper",
   "description": "通过右上角 + 新建 Codeforces 题目文件。",
   "version": "1.0.0",
-  "publisher": "codeforces-helper-local",
+  "publisher": "oj-helper-local",
   "engines": {"vscode": "^1.85.0"},
   "categories": ["Other"],
   "main": "./extension.js",
   "activationEvents": ["onView:codeforcesHelper.files"],
   "contributes": {
     "commands": [
-      {"command": "codeforcesHelper.newProblem", "title": "Codeforces Helper: 新建题目文件", "icon": "$(add)"},
-      {"command": "codeforcesHelper.settings", "title": "Codeforces Helper: 设置保存目录", "icon": "$(gear)"}
+      {"command": "codeforcesHelper.newProblem", "title": "oj-helper: 新建题目文件", "icon": "$(add)"},
+      {"command": "codeforcesHelper.settings", "title": "oj-helper: 设置保存目录", "icon": "$(gear)"}
     ],
     "configuration": {
-      "title": "Codeforces Helper",
+      "title": "oj-helper",
       "properties": {
         "codeforcesHelper.directory": {
           "type": "string",
@@ -23,7 +23,7 @@
         }
       }
     },
-    "views": {"explorer": [{"id": "codeforcesHelper.files", "name": "Codeforces Helper"}]},
+    "views": {"explorer": [{"id": "codeforcesHelper.files", "name": "oj-helper"}]},
     "viewsWelcome": [{"view": "codeforcesHelper.files", "contents": "[新建题目文件](command:codeforcesHelper.newProblem)\n[设置保存目录](command:codeforcesHelper.settings)\n点击右上角 +，输入题号即可新建 .cpp 文件。"}],
     "menus": {
       "editor/title": [{"command": "codeforcesHelper.newProblem", "group": "navigation@1"}],
