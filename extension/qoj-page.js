@@ -90,9 +90,10 @@ function qojSubmissionRows(root=document){
  return rows;
 }
 function qojFinalVerdict(record){return !!record.verdict&&!/waiting|judging|compiling|running|pending|queue|测试中|评测中|等待/i.test(record.verdict)&&(/^(?:AC|WA|RE|TLE|MLE|OLE|CE|UKE|SE|JF)\b|accepted|wrong answer|runtime error|time limit|memory limit|compile error|compilation error|judgement failed/i.test(record.verdict)||Number.isFinite(Number(record.score))&&record.score!==null&&record.score!==undefined&&record.score!=='');}
-function readQojJudgement(root=document){
+function readQojJudgement(root=document,{includeChecker=true}={}){
  const record=qojSubmissionRows(root)[0];if(!record)return {waiting:true};
  if(!qojFinalVerdict(record))return {record,waiting:true};
+ if(!includeChecker)return {record};
  const cards=Array.from(root.querySelectorAll('#details_details_accordion .card-header')).map(header=>({header,title:header.querySelector('.card-title')?.textContent.trim()||''})).filter(item=>/^Test\s*#\s*\d+\s*:/i.test(item.title));
  let checker=null,test=null;
  if(cards.length){

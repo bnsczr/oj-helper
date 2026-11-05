@@ -64,5 +64,5 @@ async function openQojStandingsTab(task){
 }
 function qojAdditionSummary(data){
  const files=data.files||[data];
- return '更新完成\n'+files.map(file=>file.name+' → '+file.defaultProblem+'（'+file.sampleCount+' 组样例）').join('\n')+(data.warnings?.length?'\n'+data.warnings.join('\n'):'')+autoOpenSummary({...data,warnings:[]});
+ return '更新完成\n'+files.map(file=>file.name+' → '+file.defaultProblem+(data.emptySource?'（空白）':'（'+file.sampleCount+' 组样例）')).join('\n')+(data.warnings?.length?'\n'+data.warnings.join('\n'):'')+autoOpenSummary({...data,warnings:[]});
 }

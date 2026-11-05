@@ -37,12 +37,13 @@ function waitForAdd(request,duration=30000){
     show('正在添加比赛全部题目及样例…');
     const data=await waitForAdd(chrome.runtime.sendMessage({action:'cfhelper-add-dashboard',problems:readDashboard(document,location.href)}),150000);
     if(!data||data.error)throw Error(data?.error||'批量创建失败');
-    show('更新完成\n'+data.files.map(file=>file.name+' → '+file.defaultProblem+'（'+file.sampleCount+' 组样例）').join('\n')+autoOpenSummary(data));return;
+    show('更新完成\n'+data.files.map(file=>file.name+' → '+file.defaultProblem+(data.emptySource?'（空白）':'（'+file.sampleCount+' 组样例）')).join('\n')+autoOpenSummary(data));return;
    }
-   const samples=readSamples(document);
+   const samples=readSamples(document,true);
    const statement=readStatement(document);
    const data=await waitForAdd(chrome.runtime.sendMessage({action:'cfhelper-add-problem',samples,statement}));
    if(!data||data.error)throw Error(data?.error||'添加失败，请刷新题目页后重试。');
+   if(data.emptySource){show('更新完成\n'+data.name+' 已'+(data.existed?'覆盖':'新建')+'为空白文件。\n默认提交题号：'+data.defaultProblem+'\n文件路径：'+data.path+autoOpenSummary(data));return;}
    show('更新完成\n'+(data.existed?(data.name||'A.cpp')+' 已覆盖并写入初始内容，默认提交题号已更新。':'已新建 '+(data.name||'A.cpp')+'，已写入初始内容并更新默认提交题号。')+'\n默认提交题号：'+data.defaultProblem+'\n文件路径：'+data.path+'\n已追加样例：'+samples.length+' 组'+autoOpenSummary(data));
   }catch(e){
    if(/extension context invalidated/i.test(e.message)){

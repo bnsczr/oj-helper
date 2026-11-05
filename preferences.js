@@ -12,6 +12,12 @@ async function selectOj(value,file=preferencesFile){
  const mode=ojModeFor({activeOj:value});
  await withStateLock(file,()=>updatePreferences({activeOj:mode.id},file));return mode;
 }
+function verdictModeFor(state={}){return state.verdictMode==='contest'?'contest':'normal';}
+async function selectVerdictMode(value,file=preferencesFile){
+ const mode=String(value).trim().toLowerCase();
+ if(!['contest','normal'].includes(mode))throw Error('用法：mode contest、mode normal 或 mode status。');
+ await withStateLock(file,()=>updatePreferences({verdictMode:mode},file));return mode;
+}
 function requireAvailableOj(state){
  const mode=ojModeFor(state);
  if(!mode.available)throw Error('当前为 '+mode.name+' 模式，功能暂未实现。请运行 oj CF 切回 Codeforces。');
@@ -61,4 +67,4 @@ async function clearDefaults(file=preferencesFile,oj){return withStateLock(file,
 async function saveDefault(file,problem,stateFile=preferencesFile,oj){
  return withStateLock(stateFile,()=>{const state=readPreferences(stateFile),site=oj||ojModeFor(state).id;parseProblem(problem,site);const profile=profileFor(state,site);return updatePreferences(profilePatch(state,{defaultProblem:problem,fileProblems:{...profile.fileProblems,[fileKey(file)]:problem}},site),stateFile);});
 }
-module.exports={preferencesFile,parseProblem,readPreferences,updatePreferences,languageType,languageFor,fileKey,defaultFor,sequenceName,withStateLock,clearDefaults,saveDefault,ojModeFor,selectOj,requireAvailableOj,profileFor,profilePatch,updateOjPreferences};
+module.exports={preferencesFile,parseProblem,readPreferences,updatePreferences,languageType,languageFor,fileKey,defaultFor,sequenceName,withStateLock,clearDefaults,saveDefault,ojModeFor,selectOj,requireAvailableOj,profileFor,profilePatch,updateOjPreferences,verdictModeFor,selectVerdictMode};

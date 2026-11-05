@@ -14,13 +14,13 @@ oj
 
 `oj CF` 切换为 Codeforces helper，`oj qoj` 切换为 QOJ helper，两种模式都使用 `submit A.cpp`、`open s`、`open b` 等命令。单独运行 `oj` 查看当前选择及用法，OJ 名称不区分大小写。
 
-首次使用默认 Codeforces。选择保存在本机偏好中，重启终端后仍然生效。两站分别保存题号关联、题面记录、文件序号和语言偏好，clear 只清当前站点。切回 `oj CF` 后原有 CF 记录仍可继续使用。浏览器添加题目根据当前网页识别站点，提交与 open 按命令行选择的 OJ 执行。
+首次使用默认 Codeforces。选择保存在本机偏好中，重启终端后仍然生效。两站分别保存题号关联、题面记录、文件序号和语言偏好，clear 只清当前站点。切回 `oj CF` 后原有 CF 记录仍可继续使用。浏览器 `+` 或 `Shift+N` 成功添加单题或整场比赛后，会自动切换到该网页对应的 OJ，随后 `submit` 和 `open` 直接使用该站点。比赛／正常显示模式独立保存。
 
 已将项目目录加入 Path 的 Windows 用户可以直接使用 `oj`；通过 npm 安装或链接时也会提供同名入口。在项目目录也可运行 `node oj.js CF` 或 `node oj.js qoj`。
 
 ## 新建与添加题目
 
-浏览器扩展更新到 **1.14.3** 后，打开 Codeforces / QOJ 题目页，点击工具栏 + 或在正文按 **Shift+N**。页面立即显示“正在添加…”，完成后显示分配的文件名、默认提交题号和路径。
+浏览器扩展更新到 **1.14.6** 后，打开 Codeforces / QOJ 题目页，点击工具栏 + 或在正文按 **Shift+N**。页面立即显示“正在添加…”，完成后显示分配的文件名、默认提交题号和路径。
 
 不同题目在每个保存目录中依次分配 `A.cpp`、`B.cpp`、`C.cpp`……，Z 之后为 AA、AB。重复添加同一题复用已分配文件；同名文件已存在时直接覆盖，并写入扩展设置中的初始内容，同时更新题号。提交 `A.cpp` 和 `B.cpp` 时分别使用各自记住的题号。未关联的文件沿用最近设置的默认题号，确认处会显示目标；c 可修改并永久保存当前文件的题号。
 
@@ -45,6 +45,14 @@ submit 'clear()'
 本机助手安装使用当前用户 Chrome / Edge 的 NativeMessagingHosts 连接，不需管理员权限。项目或 Node.js 路径变化后重新运行安装命令。1.8.0 已修复浏览器保持消息输入管道开启时启动器阻塞的问题，并为添加结果设置超时反馈。刷新扩展及题目页后使用新版。
 
 ## 提交
+
+### 比赛模式
+
+`mode contest` 进入比赛模式，`mode normal` 恢复正常模式，`mode status` 查看当前模式。模式独立于 `oj CF` / `oj qoj` 持久保存，从确认下一次提交开始生效。扩展 1.14.5 起，两站统一使用 DOMjudge 风格标签：评测中为 `pending`，AC 为 `correct`，WA 为 `wrong-answer`，TLE 为 `timelimit`，RE 为 `run-error`，CE 为 `compiler-error`。比赛模式不显示测试点编号、耗时、内存或 checker；判题平台只返回分数时仍显示该分数。导入、榜单和题面等功能照常使用。
+
+比赛模式需要浏览器扩展 **1.14.4** 或更新版本。Windows 上的 `mode` 与系统 `mode.com` 重名。在允许执行脚本的 PowerShell 中，从项目目录运行一次 `./install-mode.ps1` 注册命令（其他系统 `mode` 参数仍交由 Windows 处理）。旧版 Windows PowerShell 禁用脚本时，可以直接运行 `mode.cmd contest` 或 `node mode.js contest`。
+
+扩展 **1.14.6** 起，比赛模式下点击 `+` 或按 `Shift+N` 会创建按题号命名的空白 `.cpp`，同名普通文件直接覆盖。比如单题 B1 使用 `B1.cpp`，QOJ 没有比赛字母编号的题目使用数字题号。Dashboard 会为每题创建相应的空白文件。`submit B1.cpp` 使用刚更新的题号；模板和样例不会写入源码，题面保存与 VS Code 自动打开仍沿用原设置。`mode normal` 恢复按模板和样例导入。
 
 ```powershell
 submit A.cpp
@@ -140,7 +148,7 @@ open b
 
 ## QOJ 使用与已确认的差异
 
-升级至 1.14.3 后运行一次 `submit --install-native` 更新本机消息启动器，并重新加载浏览器扩展。已安装 v5 本机启动器的用户只需重新加载扩展。
+升级至 1.14.4 后运行一次 `submit --install-native` 更新本机消息启动器，并重新加载浏览器扩展。已安装 v5 本机启动器的用户只需重新加载扩展。
 
 ```powershell
 oj qoj

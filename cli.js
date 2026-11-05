@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const readline=require('node:readline/promises');
 const {createBridge}=require('./bridge');
 const {notifyBrowser}=require('./wakeup');
-const {parseProblem,readPreferences,updatePreferences,languageFor,languageType,defaultFor,clearDefaults,saveDefault,ojModeFor,requireAvailableOj,profileFor,updateOjPreferences}=require('./preferences');
+const {parseProblem,readPreferences,updatePreferences,languageFor,languageType,defaultFor,clearDefaults,saveDefault,ojModeFor,requireAvailableOj,profileFor,updateOjPreferences,verdictModeFor}=require('./preferences');
 const secretFile=path.join(__dirname,'.bridge-secret');
 function getSecret(){try{return fs.readFileSync(secretFile,'utf8').trim();}catch(e){if(e.code!=='ENOENT')throw e;const secret=crypto.randomBytes(32).toString('hex');fs.writeFileSync(secretFile,secret,{flag:'wx',mode:0o600});return secret;}}
 function parse(file){const m=/^([1-9]\d*)([A-Za-z]\d*)$/.exec(path.parse(file).name);if(!m)throw Error('文件名应为 1A.cpp、123B1.py 等');const ext=path.extname(file).toLowerCase();const langs={'.cpp':'C++','.cc':'C++','.c':'C','.py':'Python','.java':'Java','.rs':'Rust'};if(!langs[ext])throw Error('不支持的文件类型');return {contest:m[1],problem:m[2].toUpperCase(),language:langs[ext]};}
@@ -35,7 +35,7 @@ async function main(){
  const args=process.argv.slice(2);
  if(args[0]==='clear()'||args[0]==='clear'){const mode=requireAvailableOj(readPreferences());await clearDefaults(undefined,mode.id);console.log('已清空 '+mode.name+' 的所有默认提交题号，新建文件序号已重置为 A.cpp、B.cpp、C.cpp…（已有源码保留）。');return;}
  if(args[0]==='--pair'){console.log('配对码（请勿分享）：\n'+getSecret()+'\n在扩展详情 → 扩展程序选项中粘贴并保存。');return;}
- if(args[0]==='--install-native'){const {installNative}=require('./native-install');const ids=installNative(args.slice(1).length?args.slice(1):undefined);console.log('oj-helper 本机助手已安装。刷新扩展至 1.14.3 后，支持 CF / QOJ 添加文件与即时提交，无需常驻终端。已连接扩展：'+ids.join('、'));return;}
+ if(args[0]==='--install-native'){const {installNative}=require('./native-install');const ids=installNative(args.slice(1).length?args.slice(1):undefined);console.log('oj-helper 本机助手已安装。刷新扩展至 1.14.6 后，支持 CF / QOJ 添加文件与即时提交，无需常驻终端。已连接扩展：'+ids.join('、'));return;}
  if(args[0]==='--serve-files'){requireAvailableOj(readPreferences());try{await require('./files-server').serveFiles(getSecret());}catch(e){if(e.code==='EADDRINUSE')throw Error('文件助手端口 27122 已被占用；若助手已在运行，无需再次启动。');throw e;}return;}
  if(!args.length||args.includes('--help')){const mode=ojModeFor(readPreferences());console.log('当前 OJ：'+mode.name+(mode.available?'':'（功能暂未实现，请运行 oj CF）')+'\noj CF / oj qoj：切换 OJ 模式\nsubmit A.cpp [--lang 编译器名称片段]（题号取最近点击 + 或 c 保存的默认题号）\nsubmit clear：清空默认题号并重置文件序号（clear() 请加引号）\nsubmit --pair：显示浏览器扩展配对码\nsubmit --install-native [扩展ID]：一次性连接浏览器自动文件助手（无需常驻终端）\nsubmit --serve-files：旧版文件助手兼容入口\n浏览器需已运行；正常提交在后台完成，结果显示在终端。');return;}
  const state=readPreferences(),mode=requireAvailableOj(state);
@@ -44,7 +44,9 @@ async function main(){
  const rl=readline.createInterface({input:process.stdin,output:process.stdout});let confirmed;
  try{console.log(`当前 OJ：${mode.name}\n文件：${file}`);confirmed=await confirmSubmission(rl,spec,{saveProblem:value=>saveDefault(file,value,undefined,mode.id)});}finally{rl.close();}
  if(!confirmed){console.log('已取消');return;}
- const current=profileFor(readPreferences(),mode.id);await updateOjPreferences({languages:{...current.languages,[languageType(file)]:spec.language}},mode.id);
+ const confirmedState=readPreferences(),current=profileFor(confirmedState,mode.id);await updateOjPreferences({languages:{...current.languages,[languageType(file)]:spec.language}},mode.id);
+ spec.verdictMode=verdictModeFor(confirmedState);
+ if(spec.verdictMode==='contest')console.log('比赛模式：只显示评测结论（需要浏览器扩展 1.14.4 或更新版本）。');
  const secret=getSecret(),token=crypto.randomBytes(24).toString('hex');let timer,reminder,closed=false;
  const stop=()=>{if(closed)return;closed=true;clearTimeout(timer);clearTimeout(reminder);server.close();server.closeIdleConnections();};
  const server=createBridge({secret,token,job:{...spec,source},onEvent:event=>{clearTimeout(reminder);console.log(event.message);if(event.final){process.exitCode=event.ok?0:1;stop();}}});

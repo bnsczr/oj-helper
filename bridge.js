@@ -9,6 +9,7 @@ function createBridge({secret,token,job,onEvent,onAnnounce=()=>{}}) {
     if(req.method==='GET'&&u.pathname==='/pending'){
       if(req.headers.authorization!==`Bearer ${secret}`)return send(403,{});
       if(job.oj==='qoj'&&!String(req.headers['x-oj-helper-platforms']||'cf').split(',').includes('qoj'))return send(200,{});
+      if(job.verdictMode==='contest'&&req.headers['x-oj-helper-contest-mode']!=='1')return send(200,{});
       if(announced||done)return send(200,{});
       announced=true;onAnnounce();return send(200,{key:`27121:${token}`,oj:job.oj,action:job.action,section:job.section,contest:job.contest,problem:job.problem});
     }

@@ -38,3 +38,12 @@ test('扩展在后台创建标签，正常领取不聚焦窗口',async()=>{
  vm.runInNewContext(fs.readFileSync(require.resolve('./extension/worker'),'utf8'),{chrome,AbortSignal,fetch:async()=>({ok:true,json:async()=>({key:'27121:'+ 'a'.repeat(48),contest:'1',problem:'A'})})});
  await new Promise(r=>setImmediate(r));assert.equal(created.length,1);assert.equal(created[0].active,false);assert.match(created[0].url,/problemset\/status\?my=on#cfhelper=/);assert.equal(typeof alarm,'function');
 });
+test('旧扩展不会领走比赛模式任务，新扩展收到比赛显示设置',async()=>{
+ const server=createBridge({secret:'paired',token:'task',job:{oj:'cf',contest:'42',problem:'A',verdictMode:'contest'},onEvent:()=>{}});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const base='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer paired','X-Oj-Helper-Platforms':'cf,qoj'};
+ try{
+  assert.deepEqual(await fetch(base+'/pending',{headers}).then(response=>response.json()),{});
+  const task=await fetch(base+'/pending',{headers:{...headers,'X-Oj-Helper-Contest-Mode':'1'}}).then(response=>response.json());assert.equal(task.problem,'A');
+  assert.equal((await fetch(base+'/job?token=task').then(response=>response.json())).verdictMode,'contest');
+ }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});

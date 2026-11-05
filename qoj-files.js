@@ -2,7 +2,7 @@
 const fs=require('node:fs/promises'),path=require('node:path'),zlib=require('node:zlib');
 const {qojTarget,qojDashboard}=require('./extension/qoj');
 const {appendSamples}=require('./samples'),{DEFAULT_INITIAL_CONTENT}=require('./extension/template');
-const {preferencesFile,readPreferences,updatePreferences,fileKey,sequenceName,withStateLock}=require('./preferences');
+const {preferencesFile,readPreferences,updatePreferences,fileKey,sequenceName,withStateLock,verdictModeFor}=require('./preferences');
 const {pdfToMarkdown,pdfMarkdown,pdfAssets}=require('./qoj-pdf');
 const LIMIT=16*1024*1024;
 function sampleMarkdown(samples){
@@ -61,7 +61,7 @@ function prepareProblem(problem,index){
   try{const zipped=zipSamples(attachment),known=new Set(samples.map(s=>JSON.stringify(s)));samples=[...samples,...zipped.filter(s=>!known.has(JSON.stringify(s)))];}
   catch(error){warnings.push('QOJ #'+target.problem+' 样例读取不完整：'+error.message);}
  }
- if(!samples.length)warnings.push('QOJ #'+target.problem+' 未读取到可完整配对的样例，源码仅写入初始模板。');
+ if(!samples.length)warnings.push('QOJ #'+target.problem+' 未读取到可完整配对的样例。');
  const pdfName=pdf?'QOJ-'+target.problem+'.pdf':null;
  const statement=problem.statement;
  const contests=Array.from(new Set((problem.contests||[]).filter(id=>/^[1-9]\d*$/.test(id))));
@@ -94,7 +94,7 @@ async function createQojFiles(message,stateFile=preferencesFile){
  const dashboard=message.action==='qoj-create-dashboard'?qojDashboard(message.url):null;
  if(message.action==='qoj-create-dashboard'&&!dashboard)throw Error('QOJ 比赛网址无效。');
  const input=dashboard?message.problems:[message.problem];if(!Array.isArray(input)||!input.length)throw Error('QOJ 题目列表为空。');
- const prepared=input.map((problem,index)=>prepareProblem(problem,dashboard?(problem.index||sequenceName(index).slice(0,-4)):null));
+ const prepared=input.map((problem,index)=>prepareProblem(problem,dashboard?(problem?.index||sequenceName(index).slice(0,-4)):/^([A-Z]+\d*)\s*[.．]/.exec(problem?.title||'')?.[1]));
  const seen=new Set();for(const problem of prepared){if(dashboard&&(!/^[A-Z]+\d*$/.test(problem.index)||problem.target.contest!==dashboard.contest||seen.has(problem.index)))throw Error('QOJ 比赛题号重复或不属于当前比赛。');seen.add(problem.index);}
  for(const problem of prepared){
   problem.assets=[];
@@ -106,12 +106,14 @@ async function createQojFiles(message,stateFile=preferencesFile){
   problem.statement+=sampleMarkdown(problem.samples);
  }
  return withStateLock(stateFile,async()=>{
-  const state=readPreferences(stateFile),profile=state.qoj||{},directoryKey=fileKey(directory),old=profile.assignments?.[directoryKey]||{next:0,problems:{}};
+  const state=readPreferences(stateFile),emptySource=verdictModeFor(state)==='contest',profile=state.qoj||{},directoryKey=fileKey(directory),old=profile.assignments?.[directoryKey]||{next:0,problems:{}};
   let next=dashboard?0:old.next,assigned=dashboard?{}:{...old.problems};
   const fileProblems={...profile.fileProblems};
   for(const problem of prepared){
-   const known=assigned[problem.target.problem];while(!known&&Object.values(assigned).includes(sequenceName(next)))next++;
-   problem.name=dashboard?problem.index+'.cpp':known||sequenceName(next++);assigned[problem.target.problem]=problem.name;
+   const known=assigned[problem.target.problem];while(!dashboard&&!emptySource&&!known&&Object.values(assigned).includes(sequenceName(next)))next++;
+   problem.name=dashboard?problem.index+'.cpp':emptySource?((problem.target.contest&&problem.index)||problem.target.problem)+'.cpp':known||sequenceName(next++);
+   for(const id of Object.keys(assigned))if(assigned[id]===problem.name)delete assigned[id];
+   assigned[problem.target.problem]=problem.name;
    problem.path=path.join(directory,problem.name);problem.existed=await ensureFile(problem.path);problem.defaultProblem=problem.target.contest?problem.target.url:problem.target.problem;
    if(problem.pdf){await ensureFile(path.join(directory,'statements',problem.pdfName));for(const asset of problem.assets)await ensureFile(path.join(directory,'statements',asset.name));}
   }
@@ -121,14 +123,14 @@ async function createQojFiles(message,stateFile=preferencesFile){
   for(const problem of prepared){
    if(problem.pdf)await fs.writeFile(path.join(directory,'statements',problem.pdfName),problem.pdf);
    for(const asset of problem.assets)await fs.writeFile(path.join(directory,'statements',asset.name),asset.bytes);
-   await fs.writeFile(problem.path,appendSamples(initial,problem.samples),'utf8');fileProblems[fileKey(problem.path)]=problem.defaultProblem;
+   await fs.writeFile(problem.path,emptySource?'':appendSamples(initial,problem.samples),'utf8');fileProblems[fileKey(problem.path)]=problem.defaultProblem;
   }
   while(Object.values(assigned).includes(sequenceName(next)))next++;
   const statement=prepared.map(problem=>problem.statement).join('\n\n---\n\n'),single=prepared[0];
   const addition={oj:'qoj',kind:dashboard?'contest':'problem',contest:dashboard?.contest||single.target.contest,problem:dashboard?undefined:single.target.problem,section:'contest',url:dashboard?.url||single.target.url,directory,statement,statementVersion:2,contests:dashboard?[dashboard.contest]:single.contests};
-  updatePreferences({qoj:{...profile,lastAddition:addition,defaultProblem:prepared.at(-1).defaultProblem,fileProblems,assignments:{...profile.assignments,[directoryKey]:{next,problems:assigned}}}},stateFile);
-  const files=prepared.map(problem=>({name:problem.name,path:problem.path,existed:problem.existed,defaultProblem:problem.defaultProblem,sampleCount:problem.samples.length}));
-  return {oj:'qoj',...(dashboard?{contest:dashboard.contest,files}:files[0]),addition,warnings:prepared.flatMap(problem=>problem.warnings)};
+  updatePreferences({activeOj:'qoj',qoj:{...profile,lastAddition:addition,defaultProblem:prepared.at(-1).defaultProblem,fileProblems,assignments:{...profile.assignments,[directoryKey]:{next,problems:assigned}}}},stateFile);
+  const files=prepared.map(problem=>({name:problem.name,path:problem.path,existed:problem.existed,defaultProblem:problem.defaultProblem,sampleCount:emptySource?0:problem.samples.length}));
+  return {oj:'qoj',...(dashboard?{contest:dashboard.contest,files}:files[0]),...(emptySource?{emptySource}: {}),addition,warnings:prepared.flatMap(problem=>problem.warnings)};
  });
 }
 module.exports={resourceBytes,zipSamples,prepareProblem,createQojFiles,upgradeQojStatement};

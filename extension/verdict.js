@@ -1,4 +1,26 @@
 function isFinalVerdict(text){return /^(Accepted|Wrong answer|Time limit exceeded|Memory limit exceeded|Runtime error|Compilation error|Idleness limit exceeded|Presentation error|Output limit exceeded|Skipped|Rejected|Failed|Challenged|Security violated)/i.test(text.trim());}
+const contestVerdicts=[
+ [/^(?:accepted|correct|ac)\b|^通过/i,'correct'],
+ [/^(?:wrong answer|wa)\b|^答案错误/i,'wrong-answer'],
+ [/^(?:time limit exceeded|timelimit|tle)\b|^(?:时间超限|超出时间限制)/i,'timelimit'],
+ [/^(?:runtime error|run error|re)\b|^运行错误/i,'run-error'],
+ [/^(?:compilation error|compile error|compiler error|ce)\b|^编译错误/i,'compiler-error'],
+ [/^(?:memory limit exceeded|mle)\b|^(?:内存超限|超出内存限制)/i,'memory-limit'],
+ [/^(?:output limit exceeded|ole)\b|^输出超限/i,'output-limit'],
+ [/^no output\b/i,'no-output'],
+ [/^(?:idleness limit exceeded|ile)\b/i,'idleness-limit'],
+ [/^(?:presentation error|pe)\b/i,'presentation-error'],
+ [/^(?:judg(?:e)?ment failed|internal error|system error|failed|uke|se|jf)\b|^评测失败/i,'internal-error'],
+ [/^security violated\b/i,'security-violation'],
+ [/^skipped\b/i,'skipped'], [/^rejected\b/i,'rejected'], [/^challenged\b/i,'challenged']
+];
+function contestVerdict(value,score){
+ const text=String(value??'').trim(),match=contestVerdicts.find(([pattern])=>pattern.test(text));
+ if(match)return match[1];
+ if(/^\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?$/.test(text))return text;
+ if(score!=null&&String(score).trim()&&Number.isFinite(Number(score)))return 'score: '+Number(score);
+ return 'unknown-result';
+}
 function readVerdict(row){
  // submissionid also appears on the ID link. Only inspect verdict cells.
  const cell=row.querySelector('td.status-verdict-cell')||row.cells?.[5];
@@ -52,4 +74,4 @@ function readChecker(root,summary){
  const last=expected?records.find(r=>r.number===Number(expected[1])):records.at(-1);
  return last?.comment||null;
 }
-if(typeof module!=='undefined')module.exports={isFinalVerdict,matchesSubmission,languageSignature,readVerdict,readChecker};
+if(typeof module!=='undefined')module.exports={isFinalVerdict,matchesSubmission,languageSignature,readVerdict,readChecker,contestVerdict};

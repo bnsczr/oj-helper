@@ -2,7 +2,7 @@ if(typeof importScripts==='function')importScripts('qoj.js','qoj-page.js','qoj-w
 async function poll(){
   try{
     const {bridgeSecret}=await chrome.storage.local.get('bridgeSecret');if(!bridgeSecret)return;
-    const r=await fetch('http://127.0.0.1:27121/pending',{headers:{Authorization:`Bearer ${bridgeSecret}`,'X-Oj-Helper-Platforms':'cf,qoj'},signal:AbortSignal.timeout(4000)});if(!r.ok)return;
+    const r=await fetch('http://127.0.0.1:27121/pending',{headers:{Authorization:`Bearer ${bridgeSecret}`,'X-Oj-Helper-Platforms':'cf,qoj','X-Oj-Helper-Contest-Mode':'1'},signal:AbortSignal.timeout(4000)});if(!r.ok)return;
     const task=await r.json();if(!/^27121:[a-f0-9]{48}$/.test(task.key))return;
     if(task.oj==='qoj'&&task.action==='qoj-inspect'){
       const pages=[];const tabs=await chrome.tabs.query({url:'https://qoj.ac/*'});

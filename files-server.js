@@ -3,31 +3,33 @@ const http=require('node:http'),fs=require('node:fs/promises'),path=require('nod
 const {problemFromUrl,dashboardFromUrl}=require('./extension/problem');
 const {appendSamples}=require('./samples');
 const {DEFAULT_INITIAL_CONTENT}=require('./extension/template');
-const {parseProblem,readPreferences,updatePreferences,preferencesFile,fileKey,sequenceName,withStateLock}=require('./preferences');
+const {parseProblem,readPreferences,updatePreferences,preferencesFile,fileKey,sequenceName,withStateLock,verdictModeFor}=require('./preferences');
 function contestStatement(dashboard,problems){
  return problems.every(problem=>typeof problem.statement==='string')?'# Codeforces '+dashboard.contest+'\n\n[比赛链接]('+dashboard.url+')\n\n'+problems.map(problem=>problem.statement).join('\n\n---\n\n'):null;
 }
 async function createProblemFile(directory,url,stateFile=preferencesFile,initialContent=DEFAULT_INITIAL_CONTENT,samples=[],statement){
  if(statement!==undefined&&(typeof statement!=='string'||!statement.trim()))throw Error('题面内容无效，请重新添加。');
  if(typeof initialContent!=='string')throw Error('初始内容必须是文本。');
- const content=appendSamples(initialContent,samples);
  const problem=problemFromUrl(url).replace(/\.cpp$/,'');
- parseProblem(problem);
+ const parsed=parseProblem(problem);
  if(typeof directory!=='string'||!directory.trim())throw Error('尚未设置保存目录，请打开扩展设置填写。');
  if(!path.isAbsolute(directory))throw Error('保存目录必须是绝对路径，例如 E:\\code\\CF。');
  let info;try{info=await fs.stat(directory);}catch(e){if(e.code==='ENOENT')throw Error('保存目录不存在，请先创建目录或修改设置。');throw e;}
  if(!info.isDirectory())throw Error('保存路径不是文件夹。');
  return withStateLock(stateFile,async()=>{
-  const state=readPreferences(stateFile),directoryKey=fileKey(directory);
+  const state=readPreferences(stateFile),directoryKey=fileKey(directory),emptySource=verdictModeFor(state)==='contest';
+  if(!emptySource&&samples===null)throw Error('未读取到完整样例，请等待题目加载完成后重试。');
+  const content=emptySource?'':appendSamples(initialContent,samples);
   const assignment=state.assignments?.[directoryKey]||{next:0,problems:{}};
   const known=assignment.problems[problem];
-  let next=assignment.next;while(!known&&Object.values(assignment.problems).includes(sequenceName(next)))next++;
-  const name=known||sequenceName(next);
+  let next=assignment.next;while(!emptySource&&!known&&Object.values(assignment.problems).includes(sequenceName(next)))next++;
+  const name=emptySource?parsed.problem+'.cpp':known||sequenceName(next);
+  const assigned=Object.fromEntries(Object.entries(assignment.problems).filter(([,file])=>file!==name));assigned[problem]=name;
   const target=path.join(directory,name);let existed=false;
   try{const info=await fs.lstat(target);if(!info.isFile())throw Error('同名路径已存在，但不是普通文件。');existed=true;}catch(e){if(e.code!=='ENOENT')throw e;}
   await fs.writeFile(target,content,'utf8');
-  updatePreferences({lastAddition:{kind:'problem',contest:parseProblem(problem).contest,section:new URL(url).pathname.startsWith('/gym/')?'gym':'contest',url,directory,statement:statement||null},defaultProblem:problem,fileProblems:{...state.fileProblems,[fileKey(target)]:problem},assignments:{...state.assignments,[directoryKey]:{next:known?assignment.next:next+1,problems:{...assignment.problems,[problem]:name}}}},stateFile);
-  return {name,path:target,existed,defaultProblem:problem,sampleCount:samples.length};
+  updatePreferences({activeOj:'cf',lastAddition:{kind:'problem',contest:parsed.contest,section:new URL(url).pathname.startsWith('/gym/')?'gym':'contest',url,directory,statement:statement||null},defaultProblem:problem,fileProblems:{...state.fileProblems,[fileKey(target)]:problem},assignments:{...state.assignments,[directoryKey]:{next:emptySource||known?assignment.next:next+1,problems:assigned}}},stateFile);
+  return {name,path:target,existed,defaultProblem:problem,sampleCount:emptySource?0:samples.length,...(emptySource?{emptySource}: {})};
  });
 }
 async function createContestFiles(directory,url,problems,stateFile=preferencesFile,initialContent=DEFAULT_INITIAL_CONTENT){
@@ -35,21 +37,21 @@ async function createContestFiles(directory,url,problems,stateFile=preferencesFi
  if(!dashboard||!Array.isArray(problems)||!problems.length||typeof initialContent!=='string')throw Error('比赛批量创建参数无效。');
  if(typeof directory!=='string'||!path.isAbsolute(directory))throw Error('保存目录必须是绝对路径。');
  if(!(await fs.stat(directory)).isDirectory())throw Error('保存路径不是文件夹。');
- const indices=new Set();
- const prepared=problems.map(problem=>{
-  if(!problem||! /^[A-Z]\d*$/.test(problem.index)||indices.has(problem.index)||!Array.isArray(problem.samples)||!problem.samples.length)throw Error('比赛题号重复或样例缺失，未覆盖文件。');
-  indices.add(problem.index);
-  if(problem.statement!==undefined&&(typeof problem.statement!=='string'||!problem.statement.trim()))throw Error('题面内容无效，请重新添加。');
-  return {name:problem.index+'.cpp',path:path.join(directory,problem.index+'.cpp'),defaultProblem:dashboard.contest+problem.index,sampleCount:problem.samples.length,content:appendSamples(initialContent,problem.samples)};
- });
  return withStateLock(stateFile,async()=>{
+  const state=readPreferences(stateFile),emptySource=verdictModeFor(state)==='contest',indices=new Set();
+  const prepared=problems.map(problem=>{
+   if(!problem||! /^[A-Z]\d*$/.test(problem.index)||indices.has(problem.index)||!emptySource&&(!Array.isArray(problem.samples)||!problem.samples.length))throw Error('比赛题号重复或样例缺失，未覆盖文件。');
+   indices.add(problem.index);
+   if(problem.statement!==undefined&&(typeof problem.statement!=='string'||!problem.statement.trim()))throw Error('题面内容无效，请重新添加。');
+   return {name:problem.index+'.cpp',path:path.join(directory,problem.index+'.cpp'),defaultProblem:dashboard.contest+problem.index,sampleCount:emptySource?0:problem.samples.length,content:emptySource?'':appendSamples(initialContent,problem.samples)};
+  });
   for(const file of prepared){try{if(!(await fs.lstat(file.path)).isFile())throw Error(file.name+' 不是普通文件，未覆盖文件。');file.existed=true;}catch(e){if(e.code!=='ENOENT')throw e;file.existed=false;}}
-  const state=readPreferences(stateFile),fileProblems={...state.fileProblems},assigned={};
+  const fileProblems={...state.fileProblems},assigned={};
   for(const file of prepared){await fs.writeFile(file.path,file.content,'utf8');fileProblems[fileKey(file.path)]=file.defaultProblem;assigned[file.defaultProblem]=file.name;}
   let next=0;while(Object.values(assigned).includes(sequenceName(next)))next++;
   const statement=contestStatement(dashboard,problems);
-  updatePreferences({lastAddition:{kind:'contest',contest:dashboard.contest,section:'contest',url:dashboard.url,directory,statement},defaultProblem:prepared.at(-1).defaultProblem,fileProblems,assignments:{...state.assignments,[fileKey(directory)]:{next,problems:assigned}}},stateFile);
-  return {contest:dashboard.contest,files:prepared.map(({content,...file})=>file)};
+  updatePreferences({activeOj:'cf',lastAddition:{kind:'contest',contest:dashboard.contest,section:'contest',url:dashboard.url,directory,statement},defaultProblem:prepared.at(-1).defaultProblem,fileProblems,assignments:{...state.assignments,[fileKey(directory)]:{next,problems:assigned}}},stateFile);
+  return {contest:dashboard.contest,files:prepared.map(({content,...file})=>file),...(emptySource?{emptySource}: {})};
  });
 }
 function createFilesServer(secret,stateFile=preferencesFile){return http.createServer((req,res)=>{

@@ -16,7 +16,7 @@ function readContestSamples(indices){
  const problems=indices.map(index=>{
   const statement=statements.find(node=>new RegExp('^'+index+'\\.\\s','i').test(node.querySelector('.header .title, .title')?.textContent.trim()||''));
   if(!statement)throw Error('所有题目页缺少 '+index+' 题，未覆盖文件。');
-  return {index,samples:readSamples(statement),statement:readStatement(statement,new URL('/contest/'+location.pathname.split('/')[2]+'/problem/'+index,location.href).href)};
+  return {index,samples:readSamples(statement,true),statement:readStatement(statement,new URL('/contest/'+location.pathname.split('/')[2]+'/problem/'+index,location.href).href)};
  });
  return {problems};
 }

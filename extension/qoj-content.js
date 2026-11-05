@@ -21,6 +21,7 @@
  const compact=value=>String(value||'').replace(/\s+/g,'').toLowerCase();
  function sameTarget(record,job){return record.id>job.baseline&&record.problem===job.problem&&record.handle?.toLowerCase()===job.handle.toLowerCase()&&(!job.contest||record.contest===job.contest)&&(!job.id||record.id===job.id);}
  async function monitor(job){
+  const contestMode=job.verdictMode==='contest';
   let last='',lastChange=Date.now(),reloads=0;
   while(Date.now()<job.deadline){
    await waitFor(()=>true,job.deadline);
@@ -31,13 +32,14 @@
     if(Date.now()-job.postedAt<15000){await sleep(500);continue;}
    }
    if(/^\/submission\/[1-9]\d*\/?$/.test(location.pathname)){
-    const result=readQojJudgement(document),record=result.record;
+    const result=readQojJudgement(document,{includeChecker:!contestMode}),record=result.record;
     if(record){
      if(!sameTarget(record,job))throw Error('QOJ 提交编号、题目或账号与本次任务不匹配');
      if(compact(record.language)!==compact(job.selectedLanguage))throw Error('QOJ 提交编译器与所选语言不匹配');
      if(!job.id){job.id=record.id;save('ojhelper-qoj-pending',job);await say('QOJ 提交编号：'+job.id+'（已核对账号、题号、编译器及新编号）。');}
-     if(record.verdict!==last){last=record.verdict;lastChange=Date.now();await say('QOJ 评测：'+record.verdict);}
+     if(record.verdict!==last){const first=!last;last=record.verdict;lastChange=Date.now();if(!contestMode)await say('QOJ 评测：'+record.verdict);else if(first&&!qojFinalVerdict(record))await say('pending');}
      if(qojFinalVerdict(record)){
+      if(contestMode){await finish('提交 QOJ #'+record.id+'：'+contestVerdict(record.verdict,record.score),true);return;}
       const score=record.score!==null&&record.score!==undefined?' | 分数：'+Number(record.score)+(record.fullScore?' / '+Number(record.fullScore):''):'';
       const summary='提交 QOJ #'+record.id+'：'+record.verdict+score+(record.time?' | '+record.time:'')+(record.memory?' | '+record.memory:'');
       await finish(summary+' | 最后普通测试点'+(result.test?' '+result.test:'')+' checker：'+(result.checker||'无法得知结果（当前权限或页面未提供普通 Test 的 checker）'),true);return;

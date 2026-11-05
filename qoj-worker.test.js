@@ -42,5 +42,5 @@ test('真实背景脚本 importScripts 依赖完整加载，轮询声明 CF 与 
  const chrome=chromeBase(),requests=[],context=vm.createContext({chrome,AbortSignal,URL,Date,setTimeout,clearTimeout,fetch:async(url,options)=>{requests.push(options);return {ok:true,json:async()=>({})};}});
  context.importScripts=(...files)=>files.forEach(file=>vm.runInContext(code(file.replace(/\.js$/,'')),context));
  vm.runInContext(code('worker'),context);await new Promise(resolve=>setImmediate(resolve));
- assert.equal(typeof context.qojCollectProblem,'function');assert.equal(typeof context.readQojJudgement,'function');assert.equal(requests[0].headers['X-Oj-Helper-Platforms'],'cf,qoj');
+ assert.equal(typeof context.qojCollectProblem,'function');assert.equal(typeof context.readQojJudgement,'function');assert.equal(requests[0].headers['X-Oj-Helper-Platforms'],'cf,qoj');assert.equal(requests[0].headers['X-Oj-Helper-Contest-Mode'],'1');
 });

@@ -18,6 +18,7 @@ async function waitFor(predicate,deadline){while(Date.now()<deadline){if(blocked
 function account(){const a=document.querySelector('#header a[href^="/profile/"]');return a?decodeURIComponent(a.getAttribute('href').split('/')[2]):null;}
 function resultRow(row){return {id:Number(row.dataset.submissionId),links:[...row.querySelectorAll('a[href]')].map(a=>a.getAttribute('href')),language:row.cells?.[4]?.textContent.trim()||''};}
 async function monitor(pending){
+ const contestMode=pending.verdictMode==='contest';
  await say('已点击提交，正在读取网页上的提交记录和实时评测结果。');
 async function finishChecker(){
   if(blocked()&&!await waitFor(()=>!blocked(),pending.deadline)){await finish(pending.resultSummary+' | 最后测试点 checker：无法得知结果',true);return;}
@@ -26,7 +27,7 @@ async function finishChecker(){
   const comment=ready?readChecker(scope(),pending.resultSummary):null;
   await finish(pending.resultSummary+' | 最后测试点 checker：'+(comment||'无法得知结果（弹窗未提供对应测试点的 checker 信息）'),true);return;
  }
- if(pending.resultSummary){await finishChecker();return;}
+ if(pending.resultSummary&&!contestMode){await finishChecker();return;}
  let last='',lastChange=Date.now();
  while(Date.now()<pending.deadline){
   if(blocked()){await attention('读取结果页时需要登录或验证，请在浏览器完成；程序已暂停刷新。');await sleep(1000);continue;}
@@ -43,8 +44,9 @@ async function finishChecker(){
   if(row){
    if(!pending.id){pending.id=Number(row.dataset.submissionId);save('cfhelper-pending',pending);await say(`提交编号：${pending.id}（已核对账号、题号、编译器及新编号）。`);}
    const verdict=readVerdict(row);
-   if(verdict!==last){last=verdict;lastChange=Date.now();await say('评测：'+verdict);}
+   if(verdict!==last){const first=!last;last=verdict;lastChange=Date.now();if(!contestMode)await say('评测：'+verdict);else if(first&&!isFinalVerdict(verdict))await say('pending');}
    if(isFinalVerdict(verdict)){
+    if(contestMode){await finish(`提交 ${pending.id}：${contestVerdict(verdict)}`,true);return;}
     const time=row.querySelector('.time-consumed-cell')?.textContent.trim()||'';const memory=row.querySelector('.memory-consumed-cell')?.textContent.trim()||'';
     pending.resultSummary=`提交 ${pending.id}：${verdict}${time?' | '+time:''}${memory?' | '+memory:''}`;
     save('cfhelper-pending',pending);
