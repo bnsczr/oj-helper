@@ -1,3 +1,4 @@
+var ojBrowser=globalThis.browser??globalThis.chrome;
 (()=>{
 function waitForAdd(request,duration=30000){
  let timer;
@@ -15,7 +16,7 @@ function waitForAdd(request,duration=30000){
   if(message.startsWith('更新完成'))hideTimer=setTimeout(()=>{banner.remove();banner=null;},10000);
  }
  function progress(message){if(busy&&message.action==='oj-import-progress')show(message.text);}
- const messages=globalThis.chrome?.runtime?.onMessage;
+ const messages=ojBrowser?.runtime?.onMessage;
  if(previous?.progress)messages?.removeListener(previous.progress);
  messages?.addListener(progress);
  const onKey=async event=>{
@@ -28,7 +29,7 @@ function waitForAdd(request,duration=30000){
   if(!dashboard)try{if(isQoj)qojTarget(location.href);else problemFromUrl(location.href);}catch{return;}
   // An old isolated world can outlive an extension reload. It must release
   // the key before stopImmediatePropagation so the fresh listener can run.
-  try{if(!chrome.runtime?.id){window.removeEventListener('keydown',onKey,true);return;}}
+  try{if(!ojBrowser?.runtime?.id){window.removeEventListener('keydown',onKey,true);return;}}
   catch{window.removeEventListener('keydown',onKey,true);return;}
   event.preventDefault();event.stopImmediatePropagation();if(busy)return;busy=true;
   const startedAt=dashboard?pressedAt:undefined;
@@ -36,16 +37,16 @@ function waitForAdd(request,duration=30000){
   try{
    if(isQoj){
     show(dashboard?'正在添加 QOJ 比赛全部题目、PDF 和样例…':'正在添加 QOJ 题面、PDF 和样例…');
-    const data=await waitForAdd(chrome.runtime.sendMessage(dashboard?{action:'qoj-add',startedAt}:{action:'qoj-add'}),dashboard?900000:120000);
+    const data=await waitForAdd(ojBrowser.runtime.sendMessage(dashboard?{action:'qoj-add',startedAt}:{action:'qoj-add'}),dashboard?900000:120000);
     if(!data||data.error)throw Error(data?.error||'QOJ 添加失败。');show(qojAdditionSummary(data));return;
    }
    if(dashboard){
     show('正在添加比赛全部题目及样例…');
-    const data=await waitForAdd(chrome.runtime.sendMessage({action:'cfhelper-add-dashboard',startedAt,problems:readDashboard(document,location.href)}),240000);
+    const data=await waitForAdd(ojBrowser.runtime.sendMessage({action:'cfhelper-add-dashboard',startedAt,problems:readDashboard(document,location.href)}),240000);
     if(!data||data.error)throw Error(data?.error||'批量创建失败');
     show('更新完成'+(data.mappingOnly?'':'\n'+data.files.map(file=>file.name+' → '+file.defaultProblem+'（'+file.sampleCount+' 组样例）').join('\n'))+importSummary(data)+autoOpenSummary(data));return;
    }
-   const data=await waitForAdd(chrome.runtime.sendMessage({action:'cfhelper-add-problem'}),120000);
+   const data=await waitForAdd(ojBrowser.runtime.sendMessage({action:'cfhelper-add-problem'}),120000);
    if(!data||data.error)throw Error(data?.error||'添加失败，请刷新题目页后重试。');
    if(data.mappingOnly||data.sourcePreserved){show('更新完成'+importSummary(data)+autoOpenSummary(data));return;}
    show('更新完成\n'+(data.existed?(data.name||'A.cpp')+' 已覆盖并写入初始内容，默认提交题号已更新。':'已新建 '+(data.name||'A.cpp')+'，已写入初始内容并更新默认提交题号。')+'\n默认提交题号：'+data.defaultProblem+'\n文件路径：'+data.path+'\n已追加样例：'+(data.sampleCount||0)+' 组'+importSummary(data)+autoOpenSummary(data));

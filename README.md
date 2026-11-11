@@ -44,6 +44,33 @@ submit 'clear()'
 
 本机助手安装使用当前用户 Chrome / Edge 的 NativeMessagingHosts 连接，不需管理员权限。项目或 Node.js 路径变化后重新运行安装命令。1.8.0 已修复浏览器保持消息输入管道开启时启动器阻塞的问题，并为添加结果设置超时反馈。刷新扩展及题目页后使用新版。
 
+### Linux 上使用 Firefox
+
+安装 Node.js 24 LTS，使用桌面版 Firefox 128 或更新版本。以下示例把项目和题目文件分别放在 `~/vscpp/oj-helper` 和 `~/vscpp/OJ-work`。命令可以直接在 fish 中执行。已经克隆过项目时，从 `cd` 开始。
+
+```sh
+mkdir -p "$HOME/vscpp/OJ-work"
+git clone https://github.com/bnsczr/oj-helper.git "$HOME/vscpp/oj-helper"
+cd "$HOME/vscpp/oj-helper"
+npm ci
+npm run build:firefox
+node cli.js --install-native firefox
+node cli.js --pair
+realpath "$HOME/vscpp/OJ-work"
+```
+
+在 Firefox 打开 `about:debugging#/runtime/this-firefox`，点击「临时载入附加组件」，选择构建命令输出的 `.firefox-extension/manifest.json`。如果文件选择器隐藏点号目录，可直接输入路径。打开 `about:addons` 中的 oj-helper 设置，保存配对码和 `realpath` 输出的题目目录，并允许访问使用的 OJ 网站。刷新题目页后，点击 `+` 或按 `Shift+N` 验证导入。
+
+```sh
+node cli.js status
+node cli.js "$HOME/vscpp/OJ-work/A.cpp"
+node open.js b
+```
+
+本机助手写入 `~/.mozilla/native-messaging-hosts/`，按需启动。Snap 和 Flatpak 的 Firefox 可能需要发行版提供的额外本机通信配置。移动项目或更换 Node.js 路径后，再执行一次 `node cli.js --install-native firefox`。
+
+临时加载的版本在 Firefox 退出后需要重新加载。更新项目后运行 `npm ci` 和 `npm run build:firefox`，再在调试页重载扩展。常规 Firefox 的长期安装使用 Mozilla 签名的 `.xpi`，见 [Mozilla 签名说明](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)。
+
 ### Linux 桌面安装
 
 使用同一台 Linux 电脑上的终端和桌面版 Chrome、Chromium 或 Edge。推荐 Node.js 24 LTS；如需自动打开文件，请安装 VS Code，并确认 `command -v code` 有输出。

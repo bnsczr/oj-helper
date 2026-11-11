@@ -1,8 +1,9 @@
+var ojBrowser=globalThis.browser??globalThis.chrome;
 (async()=>{
 const match=/^#cfhelper=(27121:[a-f0-9]{48})$/.exec(location.hash);
 if(match){sessionStorage.setItem('cfhelper-key',match[1]);history.replaceState(null,'',location.pathname+location.search);}
 const key=sessionStorage.getItem('cfhelper-key');if(!key)return;
-const send=m=>chrome.runtime.sendMessage({key,...m});
+const send=m=>ojBrowser.runtime.sendMessage({key,...m});
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const banner=document.createElement('div');banner.style='position:fixed;top:0;left:0;z-index:2147483647;background:#fff3cd;color:#111;padding:12px;';document.documentElement.append(banner);
 let confirmedId,submittedAt;

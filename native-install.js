@@ -2,6 +2,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),{spawnSync}=require('node:child_process');
 const hostName='com.codeforces_helper.local';
+const firefoxId='oj-helper@bnsczr.github.io';
 function linuxBrowserDirectories({env=process.env,home=os.homedir()}={}){
  const config=path.isAbsolute(env.XDG_CONFIG_HOME||'')?env.XDG_CONFIG_HOME:path.join(home,'.config');
  const chromeConfig=path.isAbsolute(env.CHROME_CONFIG_HOME||'')?env.CHROME_CONFIG_HOME:config;
@@ -40,13 +41,17 @@ function writeManifest(manifestPath,executable,ids){
  const allowed_origins=[...new Set([...preserved,...ids.map(id=>'chrome-extension://'+id+'/')])];
  fs.writeFileSync(manifestPath,JSON.stringify({name:hostName,description:'oj-helper local integration',path:executable,type:'stdio',allowed_origins},null,2),{mode:0o600});
 }
-function installLinuxNative(ids,{projectDir=__dirname,nodePath=process.execPath,directories=linuxBrowserDirectories()}={}){
- verifyIds(ids);
+function writeLinuxLauncher(projectDir,nodePath){
  const quote=value=>"'"+value.replace(/'/g,"'\"'\"'")+"'";
  const directory=path.resolve(projectDir,'.native-host'),launcher=path.join(directory,'launcher.sh');
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
  fs.writeFileSync(launcher,'#!/bin/sh\nexec '+quote(nodePath)+' '+quote(path.resolve(projectDir,'native-host.js'))+' "$@"\n',{mode:0o700});
  fs.chmodSync(launcher,0o700);
+ return launcher;
+}
+function installLinuxNative(ids,{projectDir=__dirname,nodePath=process.execPath,directories=linuxBrowserDirectories()}={}){
+ verifyIds(ids);
+ const launcher=writeLinuxLauncher(projectDir,nodePath);
  const existing=directories.filter(dir=>fs.statSync(dir,{throwIfNoEntry:false})?.isDirectory());
  for(const dir of existing.length?existing:directories){
   const hosts=path.join(dir,'NativeMessagingHosts');fs.mkdirSync(hosts,{recursive:true});
@@ -54,8 +59,20 @@ function installLinuxNative(ids,{projectDir=__dirname,nodePath=process.execPath,
  }
  return ids;
 }
+function installFirefoxNative({projectDir=__dirname,nodePath=process.execPath,home=os.homedir()}={}){
+ const executable=writeLinuxLauncher(projectDir,nodePath);
+ const hosts=path.join(home,'.mozilla','native-messaging-hosts');
+ fs.mkdirSync(hosts,{recursive:true});
+ const manifest={name:hostName,description:'oj-helper local integration',path:executable,type:'stdio',allowed_extensions:[firefoxId]};
+ fs.writeFileSync(path.join(hosts,hostName+'.json'),JSON.stringify(manifest,null,2)+'\n',{mode:0o600});
+ return [firefoxId];
+}
 function installNative(ids){
  if(!['win32','linux'].includes(process.platform))throw Error('自动安装目前支持 Windows 和 Linux。');
+ if(ids?.length===1&&['firefox',firefoxId].includes(ids[0])){
+  if(process.platform!=='linux')throw Error('Firefox 本机助手目前支持 Linux。');
+  return installFirefoxNative();
+ }
  ids??=detectExtensionIds();
  if(process.platform==='linux')return installLinuxNative(ids);
  verifyIds(ids);
@@ -74,4 +91,4 @@ function installNative(ids){
  }
  return ids;
 }
-module.exports={detectExtensionIds,installNative,installLinuxNative,linuxBrowserDirectories,hostName};
+module.exports={detectExtensionIds,installNative,installLinuxNative,linuxBrowserDirectories,installFirefoxNative,firefoxId,hostName};

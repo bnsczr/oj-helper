@@ -1,16 +1,17 @@
+var ojBrowser=globalThis.browser??globalThis.chrome;
 async function qojScript(options,timeout=15000){
- let timer;try{return await Promise.race([chrome.scripting.executeScript(options),new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(Error('QOJ 页面脚本读取超时，请激活对应标签页并检查扩展访问权限后重试。')),timeout);})]);}finally{clearTimeout(timer);}
+ let timer;try{return await Promise.race([ojBrowser.scripting.executeScript(options),new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(Error('QOJ 页面脚本读取超时，请激活对应标签页并检查扩展访问权限后重试。')),timeout);})]);}finally{clearTimeout(timer);}
 }
 async function qojReadTab(tabId,func,args=[],timeout=60000,whileLoading=false){
  const deadline=Date.now()+timeout;let attention=false;
  while(Date.now()<deadline){
-  const tab=await chrome.tabs.get(tabId);
+  const tab=await ojBrowser.tabs.get(tabId);
   if(whileLoading||tab.status==='complete'){
    await qojScript({target:{tabId},files:['qoj.js','qoj-page.js'],injectImmediately:whileLoading});
    const replies=await qojScript({target:{tabId},func,args,injectImmediately:whileLoading});const result=replies[0]?.result;
    if(result?.error)throw Error(result.error);
    if(result&&!result.waiting)return result;
-   if(result?.challenge&&!attention){attention=true;await chrome.tabs.update(tabId,{active:true});}
+   if(result?.challenge&&!attention){attention=true;await ojBrowser.tabs.update(tabId,{active:true});}
   }
   await new Promise(resolve=>setTimeout(resolve,500));
  }
@@ -35,7 +36,7 @@ async function qojCollectProblem(tabId,expected){
 }
 async function qojAddFromTab(tabId,url,startedAt){
  const dashboard=qojDashboard(url);if(!dashboard)qojTarget(url);
- const settings=await chrome.storage.local.get(['bridgeSecret','directory','initialContent','openAfterAdd']);
+ const settings=await ojBrowser.storage.local.get(['bridgeSecret','directory','initialContent','openAfterAdd']);
  if(!settings.directory?.trim())throw Error('尚未设置保存目录，请打开扩展设置填写。');if(!settings.bridgeSecret)throw Error('尚未配对，请在设置中完成配对。');
  const common={oj:'qoj',secret:settings.bridgeSecret,directory:settings.directory,url};
  const listed=dashboard?await qojReadTab(tabId,readQojDashboard,[],60000,true):null;
@@ -54,8 +55,8 @@ async function qojAddFromTab(tabId,url,startedAt){
     const label=item.index||qojTarget(item.url).problem;
     try{
      if(dashboard){
-      if(!reader)reader=await chrome.tabs.create({active:false,url:item.url});
-      else await chrome.tabs.update(reader.id,{url:item.url});
+      if(!reader)reader=await ojBrowser.tabs.create({active:false,url:item.url});
+      else await ojBrowser.tabs.update(reader.id,{url:item.url});
      }
      const problem=await qojCollectProblem(reader?.id||tabId,item.url);
      const result=await importNative({...common,action:'qoj-import-statement',problem});
@@ -69,9 +70,9 @@ async function qojAddFromTab(tabId,url,startedAt){
    return completeMappedImport(mapping,common,read,missing,read.length||statements.some(text=>!text.includes('[题面未读取]'))?statements.join('\n\n---\n\n'):null,dashboard?undefined:contests);
   }
   if(dashboard){
-   reader=await chrome.tabs.create({active:false,url:listed.problems[0].url});const problems=[];
+   reader=await ojBrowser.tabs.create({active:false,url:listed.problems[0].url});const problems=[];
    for(let i=0;i<listed.problems.length;i++){
-    const item=listed.problems[i];if(i)await chrome.tabs.update(reader.id,{url:item.url});
+    const item=listed.problems[i];if(i)await ojBrowser.tabs.update(reader.id,{url:item.url});
     const problem=await qojCollectProblem(reader.id,item.url);if(problem.url!==item.url)throw Error('QOJ 后台页面题号不匹配，未覆盖文件。');
     problems.push({...problem,index:item.index});
    }
@@ -79,19 +80,19 @@ async function qojAddFromTab(tabId,url,startedAt){
   }else request={action:'qoj-create',url,problem:await qojCollectProblem(tabId,url)};
   const message={...request,finishId:mapping.importId,secret:settings.bridgeSecret,directory:settings.directory,initialContent:settings.initialContent,openAfterAdd:settings.openAfterAdd||{}};
   if(JSON.stringify(message).length>60*1024*1024)throw Error('QOJ 整场附件超过本机消息上限，未覆盖文件。请分题添加。');
-  let result;try{result=await chrome.runtime.sendNativeMessage('com.codeforces_helper.local',message);}catch{throw Error('QOJ 文件助手需要更新，请运行 submit --install-native '+chrome.runtime.id);}
+  let result;try{result=await ojBrowser.runtime.sendNativeMessage('com.codeforces_helper.local',message);}catch{throw Error('QOJ 文件助手需要更新，请运行 submit --install-native '+ojBrowser.runtime.id);}
   if(!result||result.error)throw Error(result?.error||'QOJ 文件创建失败。');
   return {...result,statementRead:dashboard?items.map(item=>item.index):[qojTarget(url).problem]};
  }catch(error){
   if(!mapping.importId)throw error;
   return {...mapping,mappingOnly:true,statementFailed:[error.message]};
- }finally{if(reader?.id)await chrome.tabs.remove(reader.id).catch(()=>{});}
+ }finally{if(reader?.id)await ojBrowser.tabs.remove(reader.id).catch(()=>{});}
 }
 async function openQojStandingsTab(task){
- const tab=await chrome.tabs.create({active:true,url:'https://qoj.ac/contest/'+task.contest});
+ const tab=await ojBrowser.tabs.create({active:true,url:'https://qoj.ac/contest/'+task.contest});
  const dashboard=await qojReadTab(tab.id,readQojDashboard);
  if(!dashboard.extraUrl)throw Error('本场比赛没有可读取的 Extra/External Standings 入口，已有榜单文件未覆盖。');
- await chrome.tabs.update(tab.id,{active:true,url:dashboard.extraUrl});
+ await ojBrowser.tabs.update(tab.id,{active:true,url:dashboard.extraUrl});
  const result=await qojReadTab(tab.id,readQojExternalStandings,[{contest:task.contest}],120000);return result.snapshot;
 }
 function qojAdditionSummary(data){

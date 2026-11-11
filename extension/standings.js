@@ -1,3 +1,4 @@
+var ojBrowser=globalThis.browser??globalThis.chrome;
 // Self-contained so Chrome can execute it in the normally opened webpage.
 function readStandingsPage(expected){
  const path='/'+expected.section+'/'+expected.contest+'/standings/friends/true';
@@ -55,20 +56,20 @@ function setStandingsUnofficial(){
  if(!toggle)return false;toggle.click();return true;
 }
 async function openStandingsTab(task){
- const settings=await chrome.storage.local.get('standingsShowUnofficial');
+ const settings=await ojBrowser.storage.local.get('standingsShowUnofficial');
  const showUnofficial=settings.standingsShowUnofficial!==false;
  const url=`https://codeforces.com/${task.section}/${task.contest}/standings/friends/true?showUnofficial=${showUnofficial}`;
- const tab=await chrome.tabs.create({active:true,url});
+ const tab=await ojBrowser.tabs.create({active:true,url});
  let toggled=false,settling=0;
  for(let attempt=0;attempt<120;attempt++){
-  const current=await chrome.tabs.get(tab.id);
+  const current=await ojBrowser.tabs.get(tab.id);
   if(current.status==='complete'){
    let replies;
-   try{replies=await chrome.scripting.executeScript({target:{tabId:tab.id},func:readStandingsPage,args:[{contest:task.contest,section:task.section,showUnofficial}]});}
+   try{replies=await ojBrowser.scripting.executeScript({target:{tabId:tab.id},func:readStandingsPage,args:[{contest:task.contest,section:task.section,showUnofficial}]});}
    catch{await new Promise(resolve=>setTimeout(resolve,1000));continue;}
    const page=replies[0]?.result;
    if(page?.toggle){
-    if(!toggled){toggled=true;await chrome.scripting.executeScript({target:{tabId:tab.id},func:setStandingsUnofficial});settling=attempt+3;}
+    if(!toggled){toggled=true;await ojBrowser.scripting.executeScript({target:{tabId:tab.id},func:setStandingsUnofficial});settling=attempt+3;}
     else if(attempt>settling)throw Error('未能切换 Show unofficial，请在好友榜单页面核对。');
    }else if(page?.snapshot&&(!toggled||attempt>settling))return page.snapshot;
   }

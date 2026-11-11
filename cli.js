@@ -53,7 +53,7 @@ async function main(){
   return;
  }
  if(args[0]==='--pair'){console.log('配对码（请勿分享）：\n'+getSecret()+'\n在扩展详情 → 扩展程序选项中粘贴并保存。');return;}
- if(args[0]==='--install-native'){const {installNative}=require('./native-install');const ids=installNative(args.slice(1).length?args.slice(1):undefined);console.log('oj-helper 本机助手已安装。刷新扩展至 1.14.6 后，支持 CF / QOJ 添加文件与即时提交，无需常驻终端。已连接扩展：'+ids.join('、'));return;}
+ if(args[0]==='--install-native'){const {installNative}=require('./native-install');const ids=installNative(args.length>1?args.slice(1):undefined);console.log('oj-helper 本机助手已安装。请重新加载浏览器扩展。已注册扩展：'+ids.join('、'));return;}
  if(args[0]==='--serve-files'){requireAvailableOj(readPreferences());try{await require('./files-server').serveFiles(getSecret());}catch(e){if(e.code==='EADDRINUSE')throw Error('文件助手端口 27122 已被占用；若助手已在运行，无需再次启动。');throw e;}return;}
  if(!args.length||args.includes('--help')){const mode=ojModeFor(readPreferences());console.log('当前 OJ：'+mode.name+(mode.available?'':'（功能暂未实现，请运行 oj CF）')+'\noj CF / oj qoj：切换 OJ 模式\nsubmit A.cpp [--lang 编译器名称片段]（题号取最近点击 + 或 c 保存的默认题号）\nsubmit status：查看最近 10 次提交和比赛统计\nsubmit clear：重置所有命令行状态（clear() 请加引号）\nsubmit --pair：显示浏览器扩展配对码\nsubmit --install-native [扩展ID]：一次性连接浏览器自动文件助手（无需常驻终端）\nsubmit --serve-files：旧版文件助手兼容入口\n浏览器需已运行；正常提交在后台完成，结果显示在终端。');return;}
  const state=readPreferences(),mode=requireAvailableOj(state);

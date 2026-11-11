@@ -1,3 +1,4 @@
+var ojBrowser=globalThis.browser??globalThis.chrome;
 function readDashboard(root=document,value=location.href){
  const dashboard=dashboardFromUrl(value);if(!dashboard)throw Error('当前页面不是比赛 Dashboard。');
  const seen=new Set(),problems=[];
@@ -48,15 +49,15 @@ async function cfPdfStatement(value,secret){
 }
 async function importNative(message){
  let result;
- try{result=await chrome.runtime.sendNativeMessage('com.codeforces_helper.local',message);}
- catch{throw Error('尚未连接本机助手，请运行 submit --install-native '+chrome.runtime.id);}
+ try{result=await ojBrowser.runtime.sendNativeMessage('com.codeforces_helper.local',message);}
+ catch{throw Error('尚未连接本机助手，请运行 submit --install-native '+ojBrowser.runtime.id);}
  if(!result||result.error)throw Error(result?.error||'本机助手未响应。');
  return result;
 }
 function notifyImportProgress(tabId,text){
  const message={action:'oj-import-progress',tabId,text};
- chrome.tabs.sendMessage?.(tabId,message)?.catch(()=>{});
- chrome.runtime.sendMessage?.(message)?.catch(()=>{});
+ ojBrowser.tabs.sendMessage?.(tabId,message)?.catch(()=>{});
+ ojBrowser.runtime.sendMessage?.(message)?.catch(()=>{});
 }
 function importSummary(data){
  const result=[];
@@ -71,7 +72,7 @@ async function completeMappedImport(mapping,common,problems,missing,statement,co
  return {...mapping,statementRead:problems,statementFailed:missing};
 }
 async function createCfProblem(tabId,url,message){
- const {bridgeSecret,directory,initialContent,openAfterAdd}=await chrome.storage.local.get(['bridgeSecret','directory','initialContent','openAfterAdd']);
+ const {bridgeSecret,directory,initialContent,openAfterAdd}=await ojBrowser.storage.local.get(['bridgeSecret','directory','initialContent','openAfterAdd']);
  if(!directory?.trim())throw Error('尚未设置保存目录，请打开扩展设置填写。');
  if(!bridgeSecret)throw Error('尚未配对，请在扩展设置中完成配对。');
  const common={oj:'cf',url,directory,secret:bridgeSecret};
@@ -81,7 +82,7 @@ async function createCfProblem(tabId,url,message){
  try{
   if(!statement){
    try{
-    const [result]=await chrome.scripting.executeScript({target:{tabId},func:()=>({statement:readStatement(),samples:readSamples(document,true)})});
+    const [result]=await ojBrowser.scripting.executeScript({target:{tabId},func:()=>({statement:readStatement(),samples:readSamples(document,true)})});
     ({statement,samples}=result.result);
    }catch{
     const pdf=await cfPdfStatement(url,bridgeSecret);
@@ -108,7 +109,7 @@ async function readDashboardTab(tabId,indices,dashboard,index,deadline,secret){
    // The document can be ready while large images keep the browser tab loading.
    // Read from the existing content scripts without waiting for the window load event.
    const results=await Promise.race([
-    chrome.scripting.executeScript({target:{tabId},func:readContestSamples,args:[indices,dashboard,index],injectImmediately:true}),
+    ojBrowser.scripting.executeScript({target:{tabId},func:readContestSamples,args:[indices,dashboard,index],injectImmediately:true}),
     new Promise(resolve=>{timer=setTimeout(()=>resolve([]),Math.min(2000,until-Date.now()));})
    ]);
    result=results[0]?.result;
@@ -117,7 +118,7 @@ async function readDashboardTab(tabId,indices,dashboard,index,deadline,secret){
   }finally{clearTimeout(timer);}
   if(result?.problems&&(!index||result.problems.length))return result.problems;
   if(result?.challenge&&!asked){
-   await chrome.tabs.update(tabId,{active:true});
+   await ojBrowser.tabs.update(tabId,{active:true});
    asked=true;
    until=Math.min(deadline,Date.now()+90000);
   }
@@ -136,7 +137,7 @@ async function readDashboardTab(tabId,indices,dashboard,index,deadline,secret){
 async function createDashboardFiles(tabId,url,indices,startedAt){
  const dashboard=dashboardFromUrl(url);
  if(!dashboard||!Array.isArray(indices)||!indices.length||indices.some(index=>! /^[A-Z]\d*$/.test(index))||new Set(indices).size!==indices.length)throw Error('比赛题目列表无效。');
- const {bridgeSecret,directory,initialContent,openAfterAdd}=await chrome.storage.local.get(['bridgeSecret','directory','initialContent','openAfterAdd']);
+ const {bridgeSecret,directory,initialContent,openAfterAdd}=await ojBrowser.storage.local.get(['bridgeSecret','directory','initialContent','openAfterAdd']);
  if(!directory?.trim())throw Error('尚未设置保存目录，请打开扩展设置填写。');if(!bridgeSecret)throw Error('尚未配对，请在设置中完成配对。');
  const common={oj:'cf',secret:bridgeSecret,directory,url:dashboard.url};
  const mapping=await importNative({...common,action:'prepare-import',earlyMapping:true,startedAt,openAfterAdd,problems:indices.map(index=>({index}))});
@@ -145,7 +146,7 @@ async function createDashboardFiles(tabId,url,indices,startedAt){
  const problems=[],missing=[];
  try{
   const deadline=Date.now()+210000;
-  reader=await chrome.tabs.create({active:false,url:dashboard.url+'/problems'});
+  reader=await ojBrowser.tabs.create({active:false,url:dashboard.url+'/problems'});
   const aggregate=await readDashboardTab(reader.id,indices,dashboard,null,deadline,bridgeSecret);
   const available=new Map(aggregate.map(problem=>[problem.index,problem]));
   for(const index of indices){
@@ -153,7 +154,7 @@ async function createDashboardFiles(tabId,url,indices,startedAt){
    if(cached&&cached.samples!==null){problems.push(cached);continue;}
    try{
     if(Date.now()>=deadline)throw Error('达到整场导入时限');
-    await chrome.tabs.update(reader.id,{url:dashboard.url+'/problem/'+index});
+    await ojBrowser.tabs.update(reader.id,{url:dashboard.url+'/problem/'+index});
     const [problem]=await readDashboardTab(reader.id,[index],dashboard,index,deadline,bridgeSecret);
     problems.push(problem);
    }catch(error){
@@ -168,7 +169,7 @@ async function createDashboardFiles(tabId,url,indices,startedAt){
   }
   missing.push(error.message);
  }
- finally{if(reader?.id)await chrome.tabs.remove(reader.id).catch(()=>{});}
+ finally{if(reader?.id)await ojBrowser.tabs.remove(reader.id).catch(()=>{});}
  const read=problems.filter(problem=>!problem.partial).map(problem=>problem.index);
  for(const problem of problems.filter(problem=>problem.partial))missing.push(problem.index+'（PDF 无法提取文字，请查看原件）');
  if(mapping.mappingOnly){

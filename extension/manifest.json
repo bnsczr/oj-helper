@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "oj-helper",
-  "version": "1.14.21",
+  "version": "1.14.22",
   "minimum_chrome_version": "120",
   "permissions": [
     "storage",

@@ -1,9 +1,10 @@
+var ojBrowser=globalThis.browser??globalThis.chrome;
 (async()=>{
  if(location.origin!=='https://qoj.ac')return;
  const match=/^#qojhelper=(27121:[a-f0-9]{48})$/.exec(location.hash);
  if(match){sessionStorage.setItem('ojhelper-qoj-key',match[1]);history.replaceState(null,'',location.pathname+location.search);}
  const key=sessionStorage.getItem('ojhelper-qoj-key');if(!key)return;
- const send=message=>chrome.runtime.sendMessage({key,oj:'qoj',...message});
+ const send=message=>ojBrowser.runtime.sendMessage({key,oj:'qoj',...message});
  const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
  const banner=document.createElement('div');banner.style='position:fixed;top:0;left:0;z-index:2147483647;background:#fff3cd;color:#111;padding:12px;white-space:pre-wrap';document.documentElement.append(banner);
  let confirmedId,submittedAt;

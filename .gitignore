@@ -5,6 +5,7 @@ node_modules/
 .submit-preferences.json.*.tmp
 
 .native-host/
+.firefox-extension/
 
 .submit-preferences.json.lock
 

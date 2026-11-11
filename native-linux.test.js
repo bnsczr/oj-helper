@@ -1,6 +1,8 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{spawnSync}=require('node:child_process');
-const {detectExtensionIds,installLinuxNative,linuxBrowserDirectories,hostName}=require('./native-install');
+const vm=require('node:vm');
+const {buildFirefoxExtension}=require('./build-firefox');
+const {detectExtensionIds,installLinuxNative,linuxBrowserDirectories,installFirefoxNative,firefoxId,hostName}=require('./native-install');
 const {encode}=require('./native-host');
 const {readPreferences}=require('./preferences');
 const firstId='a'.repeat(32),secondId='b'.repeat(32);
@@ -42,18 +44,77 @@ test('Linux 用户级安装写入绝对启动路径并保留已注册的扩展 I
  if(process.platform!=='win32')assert.equal((await fs.stat(launcher)).mode&0o777,0o700);
 }));
 
-test('POSIX 启动器能在带空格和单引号的项目路径接收浏览器消息并创建源码',async t=>{
+test('Firefox 构建加载共享后台，处理题目导入、即时提交和榜单',()=>fixture(async directory=>{
+ const manifestFile=buildFirefoxExtension(path.join(directory,'extension'));
+ const manifest=JSON.parse(await fs.readFile(manifestFile,'utf8'));
+ assert.equal(manifest.browser_specific_settings.gecko.id,firefoxId);
+ assert.equal(manifest.background.service_worker,undefined);
+ assert.equal(manifest.options_ui.page,'options.html');
+ assert.ok(manifest.host_permissions.includes('http://127.0.0.1/*'));
+ for(const {js} of manifest.content_scripts){
+  for(const file of js)await fs.access(path.join(path.dirname(manifestFile),file));
+ }
+
+ const token='a'.repeat(48),url='https://codeforces.com/contest/42/problem/A';
+ const imports=[],tabs=[],results=[];
+ let onMessage,onNativeMessage,pending;
+ const firefox={
+  storage:{local:{get:async()=>({bridgeSecret:'paired',directory})}},
+  alarms:{create:()=>{},onAlarm:{addListener:()=>{}}},
+  runtime:{
+   id:firefoxId,getURL:file=>'moz-extension://test/'+file,
+   onStartup:{addListener:()=>{}},onInstalled:{addListener:()=>{}},onMessage:{addListener:fn=>{onMessage=fn;}},
+   connectNative:name=>{
+    assert.equal(name,hostName);
+    return {onMessage:{addListener:fn=>{onNativeMessage=fn;}},onDisconnect:{addListener:()=>{}},postMessage:message=>assert.equal(message.action,'watch')};
+   },
+   sendNativeMessage:async(name,message)=>{
+    assert.equal(name,hostName);imports.push(message);
+    return message.action==='prepare-import'?{importId:'import'}:{name:'A.cpp'};
+   }
+  },
+  tabs:{query:async()=>[],get:async id=>({id,url,status:'complete'}),create:async tab=>{tabs.push(tab);return {id:2};}},
+  scripting:{executeScript:async ({func})=>[{result:func.name==='readStandingsPage'?{snapshot:{contest:'42'}}:{statement:'# A',samples:[]}}]}
+ };
+ const context=vm.createContext({browser:firefox,chrome:{},URL,AbortSignal,fetch:async (address,options)=>{
+  const route=new URL(address).pathname;
+  if(route==='/pending'){const task=pending;pending=undefined;return {ok:true,json:async()=>task||{}};}
+  if(route==='/result')results.push(JSON.parse(options.body));
+  return {ok:true};
+ }});
+ for(const file of manifest.background.scripts){
+  vm.runInContext(await fs.readFile(path.join(path.dirname(manifestFile),file),'utf8'),context,{filename:file});
+ }
+ const imported=await new Promise(resolve=>{
+  assert.equal(onMessage({action:'cfhelper-add-problem',tabId:1},{url:firefox.runtime.getURL('popup.html')},resolve),true);
+ });
+ assert.equal(imported.name,'A.cpp');assert.deepEqual(imports.map(message=>message.action),['prepare-import','create']);
+ assert.equal(imports[1].statement,'# A');
+ pending={key:'27121:'+token,oj:'qoj',contest:'42',problem:'123'};
+ onNativeMessage({event:'bridge-ready'});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(tabs[0].url,'https://qoj.ac/contest/42/submissions#qojhelper=27121:'+token);
+ pending={key:'27121:'+token,oj:'cf',action:'open-standings',contest:'42',section:'contest'};
+ await context.poll();
+ assert.match(tabs[1].url,/\/standings\/friends\/true/);
+ assert.deepEqual(results[0].standings,{contest:'42'});
+}));
+
+test('Firefox Linux 本机助手使用固定扩展 ID，启动器能接收消息并创建源码',async t=>{
  const shell=process.env.OJ_HELPER_TEST_SH;
  if(process.platform!=='linux'&&!shell)return t.skip('无 POSIX shell 测试环境');
  await fixture(async directory=>{
   const secretFile=path.join(directory,'secret'),stateFile=path.join(directory,'prefs.json');
   await fs.writeFile(secretFile,'paired');
   await fs.writeFile(path.join(directory,'native-host.js'),'require('+JSON.stringify(require.resolve('./native-host'))+').run('+JSON.stringify({secretFile,stateFile})+');');
-  const browser=path.join(directory,'chromium');
-  installLinuxNative([firstId],{projectDir:directory,directories:[browser]});
-  const {path:launcher}=JSON.parse(await fs.readFile(path.join(browser,'NativeMessagingHosts',hostName+'.json'),'utf8'));
+  assert.deepEqual(installFirefoxNative({projectDir:directory,home:directory}),[firefoxId]);
+  const registration=JSON.parse(await fs.readFile(path.join(directory,'.mozilla','native-messaging-hosts',hostName+'.json'),'utf8'));
+  const {path:launcher}=registration;
+  assert.equal(launcher,path.join(directory,'.native-host','launcher.sh'));
+  assert.equal(registration.name,hostName);assert.equal(registration.type,'stdio');
+  assert.deepEqual(registration.allowed_extensions,[firefoxId]);assert.equal(registration.allowed_origins,undefined);
   const message={action:'create',secret:'paired',directory,url:'https://codeforces.com/contest/42/problem/A',initialContent:'// Linux launcher test'};
-  const result=spawnSync(shell||launcher,shell?[launcher]:[],{input:encode(message),timeout:8000,windowsHide:true});
+  const args=['manifest.json',firefoxId];
+  const result=spawnSync(shell||launcher,shell?[launcher,...args]:args,{input:encode(message),timeout:8000,windowsHide:true});
   assert.ifError(result.error);assert.equal(result.status,0,result.stderr.toString());
   assert.equal(result.stdout.readUInt32LE(),result.stdout.length-4);
   const response=JSON.parse(result.stdout.subarray(4).toString('utf8'));
