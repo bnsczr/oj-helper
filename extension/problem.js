@@ -8,7 +8,7 @@ function problemFromUrl(value){
 function dashboardFromUrl(value){
  let url;try{url=new URL(value);}catch{return null;}
  if(url.protocol!=='https:'||!['codeforces.com','www.codeforces.com'].includes(url.hostname)||url.port||url.username||url.password)return null;
- const match=/^\/contest\/([1-9]\d*)\/?$/.exec(url.pathname);
- return match?{contest:match[1],url:url.origin+'/contest/'+match[1]}:null;
+ const match=/^\/(contest|gym)\/([1-9]\d*)\/?$/.exec(url.pathname);
+ return match?{section:match[1],contest:match[2],url:url.origin+'/'+match[1]+'/'+match[2]}:null;
 }
 if(typeof module!=='undefined')module.exports={problemFromUrl,dashboardFromUrl};

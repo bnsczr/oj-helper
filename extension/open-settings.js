@@ -1,5 +1,5 @@
 function normalizeOpenSettings(value){
- const defaults={dashboardCpp:true,dashboardStatement:true,problemCpp:true,problemStatement:false};
+ const defaults={dashboardCpp:true,dashboardStatement:true,problemCpp:true,problemStatement:false,contestCpp:false};
  return Object.fromEntries(Object.entries(defaults).map(([key,fallback])=>[key,typeof value?.[key]==='boolean'?value[key]:fallback]));
 }
 function autoOpenSummary(data){

@@ -13,12 +13,12 @@ test('QOJ 提交经真实本地桥接即时领取，只在后台打开 QOJ 状�
  }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
 test('QOJ 批量只复用一个后台标签页，全部读取后一次调用本机助手',async()=>{
- const chrome=chromeBase(),created=[],updated=[],removed=[],sent=[];let current='https://qoj.ac/contest/42/problem/123';
+ const chrome=chromeBase({openAfterAdd:{contestCpp:true}}),created=[],updated=[],removed=[],sent=[];let current='https://qoj.ac/contest/42/problem/123',prepared=false;
  const listed={problems:[{index:'A',url:current},{index:'B',url:'https://qoj.ac/contest/42/problem/124'}]};
- chrome.tabs={create:async options=>{created.push(options);return {id:10};},update:async(id,options)=>{updated.push(options);current=options.url;},get:async()=>({status:'complete'}),remove:async id=>removed.push(id)};
- chrome.runtime.sendNativeMessage=async(name,message)=>{sent.push(message);return {files:message.problems.map(problem=>({name:problem.index+'.cpp'}))};};
+ chrome.tabs={create:async options=>{assert.equal(prepared,true);created.push(options);return {id:10};},update:async(id,options)=>{updated.push(options);current=options.url;},get:async id=>({status:id===1?'loading':'complete'}),remove:async id=>removed.push(id)};
+ chrome.runtime.sendNativeMessage=async(name,message)=>{if(message.action==='prepare-import'){assert.equal(message.openAfterAdd.contestCpp,true);assert.equal(message.earlyMapping,true);prepared=true;return {mappingOnly:false,importId:'early'};}assert.equal(message.finishId,'early');sent.push(message);return {files:message.problems.map(problem=>({name:problem.index+'.cpp'}))};};
  chrome.scripting={executeScript:async options=>options.files?[]:[{result:options.func.name==='readQojDashboard'?listed:{problem:{url:current,statement:'# test',samples:[{input:'1',output:'2'}]}}}]};
- const context=vm.createContext({chrome,Date,URL,AbortSignal,setTimeout,clearTimeout,readQojDashboard:()=>{},readQojProblemPage:()=>{},fetch:()=>assert.fail('没有附件时不得额外抓取')});vm.runInContext(code('qoj')+'\n'+code('qoj-worker'),context);
+ const context=vm.createContext({chrome,Date,URL,AbortSignal,setTimeout,clearTimeout,readQojDashboard:()=>{},readQojProblemPage:()=>{},fetch:()=>assert.fail('没有附件时不得额外抓取')});vm.runInContext(code('qoj')+'\n'+code('dashboard')+'\n'+code('qoj-worker'),context);
  await vm.runInContext('qojAddFromTab(1,"https://qoj.ac/contest/42")',context);
  assert.equal(created.length,1);assert.equal(created[0].active,false);assert.equal(updated.length,1);assert.deepEqual(removed,[10]);assert.equal(sent.length,1);assert.equal(sent[0].action,'qoj-create-dashboard');assert.equal(sent[0].problems.length,2);
 });

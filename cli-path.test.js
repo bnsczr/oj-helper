@@ -17,11 +17,12 @@ test('从其他目录 submit B.cpp 使用保存目录中的源码、逐文件题
  const {root,cwd,file,state}=fixture();
  try{
   const tool=path.join(root,'tool');fs.mkdirSync(tool);
-  for(const name of ['cli.js','preferences.js','bridge.js','wakeup.js'])fs.copyFileSync(path.join(__dirname,name),path.join(tool,name));
+  fs.mkdirSync(path.join(tool,'extension'));
+  for(const name of ['cli.js','preferences.js','bridge.js','wakeup.js','submission-runner.js','terminal-ui.js','extension/verdict.js'])fs.copyFileSync(path.join(__dirname,name),path.join(tool,name));
   fs.writeFileSync(path.join(tool,'.submit-preferences.json'),JSON.stringify(state));
   const result=spawnSync(process.execPath,[path.join(tool,'cli.js'),'B.cpp'],{cwd,input:'n\n',encoding:'utf8',timeout:10000});
   assert.ifError(result.error);assert.equal(result.status,0,result.stderr);
-  assert.ok(result.stdout.includes('文件：'+file));assert.match(result.stdout,/题目：2278B，语言：GNU G\+\+23/);assert.match(result.stdout,/已取消/);
+  assert.ok(result.stdout.includes('文件  '+file));assert.match(result.stdout,/题号  2278B\r?\n语言  GNU G\+\+23/);assert.match(result.stdout,/已取消/);
   assert.equal(fs.existsSync(path.join(tool,'.bridge-secret')),false);
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });

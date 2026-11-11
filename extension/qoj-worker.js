@@ -1,13 +1,13 @@
 async function qojScript(options,timeout=15000){
  let timer;try{return await Promise.race([chrome.scripting.executeScript(options),new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(Error('QOJ 页面脚本读取超时，请激活对应标签页并检查扩展访问权限后重试。')),timeout);})]);}finally{clearTimeout(timer);}
 }
-async function qojReadTab(tabId,func,args=[],timeout=60000){
+async function qojReadTab(tabId,func,args=[],timeout=60000,whileLoading=false){
  const deadline=Date.now()+timeout;let attention=false;
  while(Date.now()<deadline){
   const tab=await chrome.tabs.get(tabId);
-  if(tab.status==='complete'){
-   await qojScript({target:{tabId},files:['qoj.js','qoj-page.js']});
-   const replies=await qojScript({target:{tabId},func,args});const result=replies[0]?.result;
+  if(whileLoading||tab.status==='complete'){
+   await qojScript({target:{tabId},files:['qoj.js','qoj-page.js'],injectImmediately:whileLoading});
+   const replies=await qojScript({target:{tabId},func,args,injectImmediately:whileLoading});const result=replies[0]?.result;
    if(result?.error)throw Error(result.error);
    if(result&&!result.waiting)return result;
    if(result?.challenge&&!attention){attention=true;await chrome.tabs.update(tabId,{active:true});}
@@ -33,14 +33,42 @@ async function qojCollectProblem(tabId,expected){
  problem.attachment=await qojResource(problem.attachmentUrl,target.problem,'problem');
  delete problem.pdfUrl;delete problem.attachmentUrl;return problem;
 }
-async function qojAddFromTab(tabId,url){
+async function qojAddFromTab(tabId,url,startedAt){
  const dashboard=qojDashboard(url);if(!dashboard)qojTarget(url);
  const settings=await chrome.storage.local.get(['bridgeSecret','directory','initialContent','openAfterAdd']);
  if(!settings.directory?.trim())throw Error('尚未设置保存目录，请打开扩展设置填写。');if(!settings.bridgeSecret)throw Error('尚未配对，请在设置中完成配对。');
+ const common={oj:'qoj',secret:settings.bridgeSecret,directory:settings.directory,url};
+ const listed=dashboard?await qojReadTab(tabId,readQojDashboard,[],60000,true):null;
+ const items=listed?.problems||[{url,index:null}];
+ if(!dashboard){
+  const title=await qojScript({target:{tabId},injectImmediately:true,func:()=>document.querySelector('h1.text-center, h1.col-md-7, .problem-title')?.textContent.trim()},2000).catch(()=>[]);
+  items[0].title=title[0]?.result;
+ }
+ const mapping=await importNative({...common,action:'prepare-import',earlyMapping:true,openAfterAdd:settings.openAfterAdd,...(dashboard?{problems:items,startedAt}:{title:items[0].title})});
+ if(mapping.mappingOnly||mapping.importId)notifyImportProgress(tabId,'提交映射已建立，正在读取题面…');
  let reader,request;
  try{
+  if(mapping.mappingOnly){
+   const read=[],missing=[],statements=[];let contests;
+   for(const item of items){
+    const label=item.index||qojTarget(item.url).problem;
+    try{
+     if(dashboard){
+      if(!reader)reader=await chrome.tabs.create({active:false,url:item.url});
+      else await chrome.tabs.update(reader.id,{url:item.url});
+     }
+     const problem=await qojCollectProblem(reader?.id||tabId,item.url);
+     const result=await importNative({...common,action:'qoj-import-statement',problem});
+     statements.push(result.statement);contests=result.contests;
+     if(result.complete)read.push(label);else missing.push(label+'（PDF 无法提取文字，请查看原件）');
+    }catch(error){
+     missing.push(label+'（'+error.message+'）');
+     statements.push('## '+label+'\n\n[题面未读取]('+item.url+')');
+    }
+   }
+   return completeMappedImport(mapping,common,read,missing,read.length||statements.some(text=>!text.includes('[题面未读取]'))?statements.join('\n\n---\n\n'):null,dashboard?undefined:contests);
+  }
   if(dashboard){
-   const listed=await qojReadTab(tabId,readQojDashboard);
    reader=await chrome.tabs.create({active:false,url:listed.problems[0].url});const problems=[];
    for(let i=0;i<listed.problems.length;i++){
     const item=listed.problems[i];if(i)await chrome.tabs.update(reader.id,{url:item.url});
@@ -49,10 +77,14 @@ async function qojAddFromTab(tabId,url){
    }
    request={action:'qoj-create-dashboard',url:dashboard.url,problems};
   }else request={action:'qoj-create',url,problem:await qojCollectProblem(tabId,url)};
-  const message={...request,secret:settings.bridgeSecret,directory:settings.directory,initialContent:settings.initialContent,openAfterAdd:settings.openAfterAdd||{}};
+  const message={...request,finishId:mapping.importId,secret:settings.bridgeSecret,directory:settings.directory,initialContent:settings.initialContent,openAfterAdd:settings.openAfterAdd||{}};
   if(JSON.stringify(message).length>60*1024*1024)throw Error('QOJ 整场附件超过本机消息上限，未覆盖文件。请分题添加。');
   let result;try{result=await chrome.runtime.sendNativeMessage('com.codeforces_helper.local',message);}catch{throw Error('QOJ 文件助手需要更新，请运行 submit --install-native '+chrome.runtime.id);}
-  if(!result||result.error)throw Error(result?.error||'QOJ 文件创建失败。');return result;
+  if(!result||result.error)throw Error(result?.error||'QOJ 文件创建失败。');
+  return {...result,statementRead:dashboard?items.map(item=>item.index):[qojTarget(url).problem]};
+ }catch(error){
+  if(!mapping.importId)throw error;
+  return {...mapping,mappingOnly:true,statementFailed:[error.message]};
  }finally{if(reader?.id)await chrome.tabs.remove(reader.id).catch(()=>{});}
 }
 async function openQojStandingsTab(task){
@@ -63,6 +95,7 @@ async function openQojStandingsTab(task){
  const result=await qojReadTab(tab.id,readQojExternalStandings,[{contest:task.contest}],120000);return result.snapshot;
 }
 function qojAdditionSummary(data){
+ if(data.mappingOnly)return '更新完成'+importSummary(data)+autoOpenSummary(data);
  const files=data.files||[data];
- return '更新完成\n'+files.map(file=>file.name+' → '+file.defaultProblem+(data.emptySource?'（空白）':'（'+file.sampleCount+' 组样例）')).join('\n')+(data.warnings?.length?'\n'+data.warnings.join('\n'):'')+autoOpenSummary({...data,warnings:[]});
+ return '更新完成\n'+files.map(file=>file.name+' → '+file.defaultProblem+'（'+file.sampleCount+' 组样例）').join('\n')+importSummary(data)+(data.warnings?.length?'\n'+data.warnings.join('\n'):'')+autoOpenSummary({...data,warnings:[]});
 }

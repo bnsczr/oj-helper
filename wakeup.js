@@ -1,8 +1,13 @@
 'use strict';
 const net=require('node:net'),crypto=require('node:crypto'),path=require('node:path'),os=require('node:os');
+const {setTimeout:delay}=require('node:timers/promises');
 function wakeAddress(secret){
  const id=crypto.createHash('sha256').update(secret).digest('hex').slice(0,32);
- return process.platform==='win32'?'\\\\.\\pipe\\cfhelper-wake-'+id:path.join(os.tmpdir(),'cfhelper-wake-'+id+'.sock');
+ if(process.platform==='win32')return '\\\\.\\pipe\\cfhelper-wake-'+id;
+ const [major,minor]=process.versions.node.split('.').map(Number);
+ // Abstract Linux sockets disappear even if the browser kills the host.
+ if(process.platform==='linux'&&(major>20||major===20&&minor>=8))return '\0cfhelper-wake-'+id;
+ return path.join(os.tmpdir(),'cfhelper-wake-'+id+'.sock');
 }
 function createWakeListener(secret,onWake,{address=wakeAddress(secret)}={}){
  const server=net.createServer(socket=>{
@@ -29,4 +34,18 @@ function notifyBrowser(secret,{address=wakeAddress(secret),timeout=350}={}){
   socket.on('error',()=>finish(false));socket.on('end',()=>finish(false));
  });
 }
-module.exports={wakeAddress,createWakeListener,notifyBrowser};
+async function notifyUntilReceived(secret,signal,{notify=notifyBrowser}={}){
+ const start=performance.now(),deadline=start+3000;
+ try{
+  for(const offset of [0,300,700,1200,1800,2400]){
+   const wait=start+offset-performance.now();
+   if(wait>0)await delay(wait,undefined,{signal});
+   const remaining=deadline-performance.now();
+   if(signal.aborted||remaining<=0)return;
+   await notify(secret,{timeout:Math.min(250,remaining)});
+  }
+  const remaining=deadline-performance.now();
+  if(!signal.aborted&&remaining>0)await delay(remaining,undefined,{signal});
+ }catch(error){if(!signal.aborted)throw error;}
+}
+module.exports={wakeAddress,createWakeListener,notifyBrowser,notifyUntilReceived};

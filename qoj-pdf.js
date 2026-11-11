@@ -1,13 +1,13 @@
 'use strict';
 const path=require('node:path');
 const {Worker}=require('node:worker_threads');
-function pdfToMarkdown(bytes,{timeout=60000}={}){
+function pdfToMarkdown(bytes,{timeout=60000,renderImages=true}={}){
  return new Promise((resolve,reject)=>{
   // PDF.js diagnostics must never reach the native messaging stdout stream.
-  const worker=new Worker(path.join(__dirname,'qoj-pdf-worker.js'),{workerData:{bytes:new Uint8Array(bytes)},stdout:true,stderr:true});
+  const worker=new Worker(path.join(__dirname,'qoj-pdf-worker.js'),{workerData:{bytes:new Uint8Array(bytes),renderImages},stdout:true,stderr:true});
   worker.stdout.resume();worker.stderr.resume();let finished=false;
   const end=(error,result)=>{if(finished)return;finished=true;clearTimeout(timer);worker.terminate();error?reject(error):resolve(result);};
-  const timer=setTimeout(()=>end(Error('QOJ PDF 转换超时，未覆盖文件。')),timeout);
+  const timer=setTimeout(()=>end(Error('PDF 转换超时。')),timeout);
   worker.once('error',error=>end(error));
   worker.once('exit',code=>{if(!finished)end(Error('QOJ PDF 转换进程提前结束（'+code+'）。'));});
   worker.once('message',message=>message.error?end(Error(message.error)):end(null,message));

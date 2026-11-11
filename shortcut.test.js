@@ -4,6 +4,8 @@ const fs=require('node:fs'),vm=require('node:vm');const {problemFromUrl,dashboar
 function page(url='https://codeforces.com/contest/2278/problem/F'){
  let listener,resolve;const banners=[],calls=[];
  const context={setTimeout,clearTimeout,autoOpenSummary,window:{addEventListener:(name,fn)=>{listener=fn;},removeEventListener:()=>{}},location:{href:url},problemFromUrl,dashboardFromUrl,readDashboard:()=>['A','B1'],readStatement:()=>'# Problem statement',readSamples:()=>[{input:'1',output:'2'}],document:{addEventListener:(name,fn)=>{listener=fn;},createElement:()=>({setAttribute:()=>{},remove:()=>{}}),documentElement:{append:el=>banners.push(el)}},chrome:{runtime:{id:'test-extension',sendMessage:message=>{calls.push(message);return new Promise(r=>resolve=r);}}}};
+ vm.runInNewContext(fs.readFileSync(require.resolve('./extension/dashboard'),'utf8'),context);
+ context.readDashboard=()=>['A','B1'];
  vm.runInNewContext(fs.readFileSync(require.resolve('./extension/shortcut'),'utf8'),context);
  return {press:overrides=>listener({shiftKey:true,code:'KeyN',key:'N',preventDefault:()=>{},stopImmediatePropagation:()=>{},target:{closest:()=>null},...overrides}),banners,calls,finish:()=>resolve(dashboardFromUrl(url)?{files:[{name:'A.cpp',defaultProblem:'2278A',sampleCount:2},{name:'B1.cpp',defaultProblem:'2278B1',sampleCount:1}]}:{existed:true,path:'E:/code/A.cpp',defaultProblem:'2278F'})};
 }
@@ -19,9 +21,10 @@ test('正文快捷键不影响输入框、代码编辑器和其他组合键',asy
 });
 test('后台快捷键入口只接受题目页，并使用浏览器提供的网址',async()=>{
  let onMessage;const calls=[];
- const chrome={storage:{local:{get:async()=>({bridgeSecret:'paired',directory:'E:/code',initialContent:'// configured template',openAfterAdd:{problemCpp:false,problemStatement:true}})}},alarms:{create:()=>{},onAlarm:{addListener:()=>{}}},runtime:{id:'a'.repeat(32),onStartup:{addListener:()=>{}},onInstalled:{addListener:()=>{}},onMessage:{addListener:fn=>{onMessage=fn;}},sendNativeMessage:async(name,message)=>{calls.push(message);return {defaultProblem:'2278F'};}}};
- vm.runInNewContext(fs.readFileSync(require.resolve('./extension/worker'),'utf8'),{chrome,URL,AbortSignal,fetch:async()=>({ok:false})});
- const message={action:'cfhelper-add-problem',samples:[{input:'1',output:'2'}],url:'https://evil.test/'};
+ const chrome={storage:{local:{get:async()=>({bridgeSecret:'paired',directory:'E:/code',initialContent:'// configured template',openAfterAdd:{problemCpp:false,problemStatement:true}})}},alarms:{create:()=>{},onAlarm:{addListener:()=>{}}},runtime:{id:'a'.repeat(32),onStartup:{addListener:()=>{}},onInstalled:{addListener:()=>{}},onMessage:{addListener:fn=>{onMessage=fn;}},sendNativeMessage:async(name,message)=>{if(message.action==='prepare-import')return {mappingOnly:false};calls.push(message);return {defaultProblem:'2278F'};}}};
+ const context=vm.createContext({chrome,URL,AbortSignal,problemFromUrl,fetch:async()=>({ok:false})});
+ for(const file of ['dashboard','worker'])vm.runInContext(fs.readFileSync(require.resolve('./extension/'+file),'utf8'),context);
+ const message={action:'cfhelper-add-problem',samples:[{input:'1',output:'2'}],statement:'# F',url:'https://evil.test/'};
  for(const sender of [{url:'https://evil.test/contest/1/problem/A',tab:{}},{url:'https://codeforces.com/',tab:{}},{url:'https://codeforces.com/contest/1/problem/A'}])assert.equal(onMessage(message,sender,()=>assert.fail('非法来源不应回复')),undefined);
  const data=await new Promise(resolve=>assert.equal(onMessage(message,{url:'https://codeforces.com/contest/2278/problem/F',tab:{id:1}},resolve),true));
  assert.equal(data.defaultProblem,'2278F');assert.equal(calls.length,1);assert.equal(calls[0].url,'https://codeforces.com/contest/2278/problem/F');assert.equal(calls[0].initialContent,'// configured template');assert.equal(calls[0].samples.length,1);assert.equal(calls[0].openAfterAdd.problemCpp,false);assert.equal(calls[0].openAfterAdd.problemStatement,true);
@@ -65,5 +68,5 @@ test('旧版升级仅恢复安全的题目页，不刷新有输入的页面',asy
 });
 
 test('Dashboard 的 Shift+N 复用批量入口并显示全部映射',async()=>{
- const p=page('https://codeforces.com/contest/2278');const operation=p.press();assert.match(p.banners[0].textContent,/正在添加比赛全部题目/);assert.equal(p.calls[0].action,'cfhelper-add-dashboard');assert.equal(p.calls[0].problems.join(','),'A,B1');p.finish();await operation;assert.match(p.banners[0].textContent,/A\.cpp → 2278A/);assert.match(p.banners[0].textContent,/B1\.cpp → 2278B1/);
+ const p=page('https://codeforces.com/contest/2278');const before=Date.now(),operation=p.press();assert.match(p.banners[0].textContent,/正在添加比赛全部题目/);assert.equal(p.calls[0].action,'cfhelper-add-dashboard');assert.equal(p.calls[0].problems.join(','),'A,B1');assert.ok(p.calls[0].startedAt>=before&&p.calls[0].startedAt<=Date.now());p.finish();await operation;assert.match(p.banners[0].textContent,/A\.cpp → 2278A/);assert.match(p.banners[0].textContent,/B1\.cpp → 2278B1/);
 });

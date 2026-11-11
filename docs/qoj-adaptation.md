@@ -6,7 +6,7 @@
 
 - `oj CF`、`oj qoj`、`oj`：持久化选择 OJ、查看状态。
 - `submit A.cpp`、`oj-helper A.cpp`、`--lang`：提交当前文件，并保留 y/n/c 确认。
-- `submit clear`、`submit 'clear()'`：清空默认题号并重置顺序。
+- `submit clear`、`submit 'clear()'`：重置两站的命令行状态，恢复 Codeforces 和正常模式。
 - `submit --pair`、`submit --install-native`：共用配对和本机连接。
 - `submit --serve-files`：保留旧文件助手兼容入口。
 - `open s`：覆盖保存 statement.md，并以保存目录作为 VS Code 工作区打开。
@@ -20,7 +20,7 @@
 | 项目 | 平台差异 | 实现方式 |
 | --- | --- | --- |
 | 题号 | QOJ 普通题目使用数字 ID，如 `/problem/2`；不能使用 CF 的比赛号加字母解析。 | c 接受数字 ID 或 QOJ 题目网址；批量导入仍按比赛页题号创建 A.cpp 等文件，记录到真实题目 ID 及比赛上下文。 |
-| 配置 | 两站的题号、语言名称、最近题面与比赛不能混用。 | 分别保存 CF/QOJ 上下文；clear 仅清当前 OJ；保留并兼容旧 CF 配置。 |
+| 配置 | 两站的题号、语言名称、最近题面与比赛不能混用。 | 分别保存 CF/QOJ 上下文，兼容旧 CF 配置。clear 重置两站的命令行状态。 |
 | 编译器 | QOJ 官方评测说明支持 C++23，但编译器选项不能按 CF 的 GNU G++23 名称匹配。 | C++ 默认使用 QOJ 页面实际提供的 C++23，独立记忆语言偏好；不可选时提示 --lang，不默默降级。 |
 | 题面和样例 | QOJ 存在 PDF iframe 题面，样例可能位于题目 Attachments 中。 | 按用户后续要求，PDF 逐页提取完整正文写入 Markdown，保留原件并嵌入各页图像以核对公式和插图；读取 HTML 与官方 ZIP 的全部可配对样例。旧记录通过 open s 从本地 PDF 自动补全，不重新覆盖源码。缺失或无法可靠配对时明确提示。 |
 | 提交与 checker | 结果可能表现为 AC 或分数，普通 Test 与 Extra Test 同时存在；Training Mode 可能隐藏详细反馈。 | 从正常网页读取原始结果、分数、耗时、内存，仅返回最后一个普通 Test 的 checker，排除 Extra Test；不可见时说明“无法得知结果”。不改变 Training Mode。 |

@@ -21,7 +21,7 @@ function readStatement(root=document,source=location.href){
   if(tag==='BR')return '\n';
   if(tag==='IMG')return '!['+(node.getAttribute('alt')||'图片')+']('+absolute(node.getAttribute('src'))+')';
   if(tag==='PRE'){
-   const value=plain(node).replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').replace(/^\n|\n$/g,'');
+   const value=plain(node).replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ').replace(/\n$/,'');
    const mark=fence(value);return '\n\n'+mark+'text\n'+value+'\n'+mark+'\n\n';
   }
   const text=children(node);

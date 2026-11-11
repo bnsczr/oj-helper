@@ -14,8 +14,13 @@ function waitForAdd(request,duration=30000){
   banner.textContent=message;
   if(message.startsWith('更新完成'))hideTimer=setTimeout(()=>{banner.remove();banner=null;},10000);
  }
+ function progress(message){if(busy&&message.action==='oj-import-progress')show(message.text);}
+ const messages=globalThis.chrome?.runtime?.onMessage;
+ if(previous?.progress)messages?.removeListener(previous.progress);
+ messages?.addListener(progress);
  const onKey=async event=>{
   if(!event.shiftKey||event.ctrlKey||event.altKey||event.metaKey||event.repeat||event.isComposing||!(event.code==='KeyN'||event.key?.toLowerCase()==='n'))return;
+  const pressedAt=event.timeStamp>0&&typeof performance!=='undefined'?Math.floor(performance.timeOrigin+event.timeStamp):Date.now();
   const targets=event.composedPath?.()||[event.target];
   if(targets.some(target=>target?.isContentEditable||target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], .CodeMirror, .ace_editor, .monaco-editor')))return;
   const isQoj=location.href.startsWith('https://qoj.ac/');
@@ -26,25 +31,24 @@ function waitForAdd(request,duration=30000){
   try{if(!chrome.runtime?.id){window.removeEventListener('keydown',onKey,true);return;}}
   catch{window.removeEventListener('keydown',onKey,true);return;}
   event.preventDefault();event.stopImmediatePropagation();if(busy)return;busy=true;
+  const startedAt=dashboard?pressedAt:undefined;
   show('正在添加…');
   try{
    if(isQoj){
     show(dashboard?'正在添加 QOJ 比赛全部题目、PDF 和样例…':'正在添加 QOJ 题面、PDF 和样例…');
-    const data=await waitForAdd(chrome.runtime.sendMessage({action:'qoj-add'}),dashboard?900000:120000);
+    const data=await waitForAdd(chrome.runtime.sendMessage(dashboard?{action:'qoj-add',startedAt}:{action:'qoj-add'}),dashboard?900000:120000);
     if(!data||data.error)throw Error(data?.error||'QOJ 添加失败。');show(qojAdditionSummary(data));return;
    }
    if(dashboard){
     show('正在添加比赛全部题目及样例…');
-    const data=await waitForAdd(chrome.runtime.sendMessage({action:'cfhelper-add-dashboard',problems:readDashboard(document,location.href)}),150000);
+    const data=await waitForAdd(chrome.runtime.sendMessage({action:'cfhelper-add-dashboard',startedAt,problems:readDashboard(document,location.href)}),240000);
     if(!data||data.error)throw Error(data?.error||'批量创建失败');
-    show('更新完成\n'+data.files.map(file=>file.name+' → '+file.defaultProblem+(data.emptySource?'（空白）':'（'+file.sampleCount+' 组样例）')).join('\n')+autoOpenSummary(data));return;
+    show('更新完成'+(data.mappingOnly?'':'\n'+data.files.map(file=>file.name+' → '+file.defaultProblem+'（'+file.sampleCount+' 组样例）').join('\n'))+importSummary(data)+autoOpenSummary(data));return;
    }
-   const samples=readSamples(document,true);
-   const statement=readStatement(document);
-   const data=await waitForAdd(chrome.runtime.sendMessage({action:'cfhelper-add-problem',samples,statement}));
+   const data=await waitForAdd(chrome.runtime.sendMessage({action:'cfhelper-add-problem'}),120000);
    if(!data||data.error)throw Error(data?.error||'添加失败，请刷新题目页后重试。');
-   if(data.emptySource){show('更新完成\n'+data.name+' 已'+(data.existed?'覆盖':'新建')+'为空白文件。\n默认提交题号：'+data.defaultProblem+'\n文件路径：'+data.path+autoOpenSummary(data));return;}
-   show('更新完成\n'+(data.existed?(data.name||'A.cpp')+' 已覆盖并写入初始内容，默认提交题号已更新。':'已新建 '+(data.name||'A.cpp')+'，已写入初始内容并更新默认提交题号。')+'\n默认提交题号：'+data.defaultProblem+'\n文件路径：'+data.path+'\n已追加样例：'+samples.length+' 组'+autoOpenSummary(data));
+   if(data.mappingOnly||data.sourcePreserved){show('更新完成'+importSummary(data)+autoOpenSummary(data));return;}
+   show('更新完成\n'+(data.existed?(data.name||'A.cpp')+' 已覆盖并写入初始内容，默认提交题号已更新。':'已新建 '+(data.name||'A.cpp')+'，已写入初始内容并更新默认提交题号。')+'\n默认提交题号：'+data.defaultProblem+'\n文件路径：'+data.path+'\n已追加样例：'+(data.sampleCount||0)+' 组'+importSummary(data)+autoOpenSummary(data));
   }catch(e){
    if(/extension context invalidated/i.test(e.message)){
     window.removeEventListener('keydown',onKey,true);
@@ -52,6 +56,6 @@ function waitForAdd(request,duration=30000){
    }else show('添加失败：'+e.message);
   }finally{busy=false;}
  };
- globalThis.__cfhelperShortcut=onKey;
+ onKey.progress=progress;globalThis.__cfhelperShortcut=onKey;
  window.addEventListener('keydown',onKey,true);
 })();

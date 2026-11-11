@@ -15,15 +15,17 @@ test('保存空模板及重新打开设置不会被默认模板替换',async()=>
  const {state,elements}=await options({initialContent:''});assert.equal(elements['#initialContent'].value,'');await elements['#saveInitialContent'].onclick();assert.equal(state.initialContent,'');
 });
 
-test('四个自动打开开关缺省正确，独立保存并在重新打开后保留 false',async()=>{
+test('比赛模式默认关闭自动打开，可与正常模式的四个开关独立保存',async()=>{
  const {state,elements}=await options();
  assert.equal(elements['#dashboardCpp'].checked,true);assert.equal(elements['#dashboardStatement'].checked,true);
  assert.equal(elements['#problemCpp'].checked,true);assert.equal(elements['#problemStatement'].checked,false);
+ assert.equal(elements['#contestCpp'].checked,false);
  elements['#dashboardCpp'].checked=false;elements['#dashboardStatement'].checked=true;elements['#problemCpp'].checked=false;elements['#problemStatement'].checked=true;
- await elements['#saveOpenAfterAdd'].onclick();
- assert.deepEqual({...state.openAfterAdd},{dashboardCpp:false,dashboardStatement:true,problemCpp:false,problemStatement:true});
+ elements['#contestCpp'].checked=true;await elements['#saveOpenAfterAdd'].onclick();
+ assert.deepEqual({...state.openAfterAdd},{dashboardCpp:false,dashboardStatement:true,problemCpp:false,problemStatement:true,contestCpp:true});
  const reopened=await options(state);assert.equal(reopened.elements['#dashboardCpp'].checked,false);assert.equal(reopened.elements['#problemCpp'].checked,false);assert.equal(reopened.elements['#problemStatement'].checked,true);
  assert.equal(reopened.elements['#initialContent'].value,DEFAULT_INITIAL_CONTENT);
+ assert.equal(reopened.elements['#contestCpp'].checked,true);
 });
 
 test('Show unofficial 默认开启，可以独立关闭并持久化',async()=>{

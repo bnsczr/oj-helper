@@ -1,18 +1,19 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),fsp=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),vm=require('node:vm');
-const {main:mode}=require('./mode'),{selectOj,clearDefaults,readPreferences}=require('./preferences');
+const {main:mode}=require('./mode'),{selectOj,resetCliState,readPreferences,ojModeFor}=require('./preferences');
 const {page,submission,card}=require('./test-support/qoj-fixtures');
 const {contestVerdict}=require('./extension/verdict');
 const source=file=>fs.readFileSync(require.resolve('./extension/'+file),'utf8');
 
-test('比赛模式默认关闭，持久保存，与 OJ 切换和题号清空相互独立',async()=>{
+test('比赛模式独立于 OJ 切换，重置后恢复正常模式和 Codeforces',async()=>{
  const directory=await fsp.mkdtemp(path.join(os.tmpdir(),'oj-contest-mode-')),stateFile=path.join(directory,'preferences.json'),options={stateFile,log:()=>{}};
  try{
   assert.equal(await mode(['status'],options),'normal');assert.equal(fs.existsSync(stateFile),false);
-  await mode(['contest'],options);await selectOj('qoj',stateFile);await clearDefaults(stateFile);
+  await mode(['contest'],options);await selectOj('qoj',stateFile);
   assert.equal(await mode(['status'],options),'contest');assert.equal(readPreferences(stateFile).activeOj,'qoj');
   await assert.rejects(mode(['invalid'],options),/用法/);assert.equal(await mode(['status'],options),'contest');
-  await mode(['normal'],options);assert.equal(await mode(['status'],options),'normal');
+  await resetCliState(stateFile);assert.equal(await mode(['status'],options),'normal');
+  assert.equal(ojModeFor(readPreferences(stateFile)).id,'cf');
  }finally{await fsp.unlink(stateFile).catch(error=>{if(error.code!=='ENOENT')throw error;});await fsp.rmdir(directory);}
 });
 
@@ -26,14 +27,19 @@ test('CF 比赛模式不会输出运行中的测试编号，也不打开 checker
  const html='<table><tbody><tr data-submission-id="101"><td class="status-verdict-cell">Running on test 4</td><td class="time-consumed-cell">62 ms</td><td class="memory-consumed-cell">100 KB</td><td><a class="view-source">checker</a></td></tr></tbody></table>';
  const p=monitorPage(html,'https://codeforces.com/problemset/status?my=on','cfhelper','cfhelper-pending',{id:101,verdictMode:'contest',deadline:Date.now()+5000},document=>{document.querySelector('.status-verdict-cell').textContent='Wrong answer on test 9';});
  p.document.querySelector('.view-source').click=()=>assert.fail('比赛模式不应打开 checker 弹窗');p.context.readChecker=()=>assert.fail('比赛模式不应读取 checker');
- await p.run(source('content'));assert.ok(p.events.some(event=>event.message==='pending'));assert.equal(p.events.at(-1).message,'提交 101：wrong-answer');assert.equal(p.events.at(-1).final,true);
+ await p.run(source('content'));assert.ok(p.events.some(event=>event.message==='pending'));assert.equal(p.events.at(-1).message,'提交 101：WRONG-ANSWER');assert.equal(p.events.at(-1).final,true);
+ assert.equal(p.events.at(-1).rawVerdict,'Wrong answer on test 9');
+ assert.equal(p.events.at(-1).measurements.time,'62 ms');assert.equal(p.events.at(-1).measurements.memory,'100 KB');
  assert.doesNotMatch(p.events.map(event=>event.message).join('\n'),/test \d|checker|62 ms|100 KB/i);
 });
 
 test('QOJ 比赛模式保留账号、题目和语言核对，跳过普通 Test 和 Extra Test 详情',async()=>{
- const p=monitorPage(submission(101,'Running on test 4')+'<div id="details_details_accordion">'+card(9,'private-checker')+card(1,'private-extra',true)+'</div>','https://qoj.ac/submission/101','ojhelper-qoj','ojhelper-qoj-pending',{id:101,baseline:100,handle:'TestUser',contest:'42',problem:'123',selectedLanguage:'C++23',verdictMode:'contest',deadline:Date.now()+5000},document=>{document.querySelector('.uoj-score').textContent='TLE on test 9';});
+ const p=monitorPage(submission(101,'Running on test 4')+'<div id="details_details_accordion">'+card(9,'private-checker')+card(1,'private-extra',true)+'</div>','https://qoj.ac/submission/101','ojhelper-qoj','ojhelper-qoj-pending',{id:101,baseline:100,handle:'TestUser',contest:'42',problem:'123',selectedLanguage:'C++23',verdictMode:'contest',deadline:Date.now()+5000},document=>{document.querySelector('.uoj-score').textContent='AC，TL';});
  const query=p.document.querySelectorAll.bind(p.document);p.document.querySelectorAll=selector=>{assert.doesNotMatch(selector,/details_details_accordion/);return query(selector);};
- await p.run(source('qoj-content'));assert.ok(p.events.some(event=>event.message==='pending'));assert.equal(p.events.at(-1).message,'提交 QOJ #101：timelimit');assert.equal(p.events.at(-1).final,true);
+ await p.run(source('qoj-content'));assert.ok(p.events.some(event=>event.message==='pending'));assert.equal(p.events.at(-1).message,'提交 QOJ #101：CORRECT, TIME-LIMIT');assert.equal(p.events.at(-1).final,true);
+ assert.equal(p.events.at(-1).rawVerdict,'AC，TL');
+ assert.equal(p.events.at(-1).measurements.time,'12ms');assert.equal(p.events.at(-1).measurements.memory,'4096kb');
+ assert.equal(p.events.at(-1).measurements.score,'100 / 100');
  assert.doesNotMatch(p.events.map(event=>event.message).join('\n'),/test \d|checker|private|12ms|4096kb/i);
 });
 

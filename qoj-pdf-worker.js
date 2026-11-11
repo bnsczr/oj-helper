@@ -40,7 +40,9 @@ async function convert(){
   const document=await loading.promise;if(document.numPages>80)throw Error('QOJ PDF 超过 80 页，未覆盖文件。');
   const pages=[];let total=0;
   for(let number=1;number<=document.numPages;number++){
-   const page=await document.getPage(number),text=pageText((await page.getTextContent()).items),original=page.getViewport({scale:1});
+   const page=await document.getPage(number),items=(await page.getTextContent()).items,text=pageText(items);
+   if(!workerData.renderImages){pages.push({text,samples:sampleTables(items)});page.cleanup();continue;}
+   const original=page.getViewport({scale:1});
    const scale=Math.min(1.6,Math.sqrt(4000000/(original.width*original.height))),viewport=page.getViewport({scale});
    const factory=new CanvasFactory(),target=factory.create(viewport.width,viewport.height);
    await page.render({canvasContext:target.context,viewport,canvasFactory:factory}).promise;
@@ -51,4 +53,26 @@ async function convert(){
   return {pages};
  }finally{await loading.destroy();}
 }
-if(parentPort)convert().then(result=>parentPort.postMessage(result,result.pages.map(page=>page.png.buffer))).catch(error=>parentPort.postMessage({error:'QOJ PDF 全文转换失败：'+error.message}));
+function sampleTables(items){
+ const cells=items.filter(item=>typeof item.str==='string'&&item.str.trim()).map(item=>({text:item.str,x:item.transform[4],y:item.transform[5],width:item.width})).sort((a,b)=>b.y-a.y||a.x-b.x);
+ const rows=[];
+ for(const cell of cells){
+  if(!rows.length||Math.abs(rows.at(-1)[0].y-cell.y)>2)rows.push([]);
+  rows.at(-1).push(cell);
+ }
+ const samples=[];let table;
+ const finish=()=>{if(table?.input.length&&table.output.length)samples.push({input:table.input.join('\n'),output:table.output.join('\n')});table=null;};
+ for(const row of rows){
+  row.sort((a,b)=>a.x-b.x);
+  const left=row.find(cell=>/^standard input$/i.test(cell.text.trim())),right=row.find(cell=>/^standard output$/i.test(cell.text.trim()));
+  if(left&&right&&right.x>left.x){finish();table={split:(left.x+left.width/2+right.x+right.width/2)/2,input:[],output:[]};continue;}
+  if(!table)continue;
+  const label=row.map(cell=>cell.text).join(' ').trim();
+  if(/^(?:notes?\b|examples?\b|explanation\b|page \d+ of \d+$)/i.test(label)){finish();continue;}
+  for(const [name,part] of [['input',row.filter(cell=>cell.x<table.split)],['output',row.filter(cell=>cell.x>=table.split)]]){
+   if(part.length)table[name].push(part.map(cell=>cell.text).join(' ').trim());
+  }
+ }
+ finish();return samples;
+}
+if(parentPort)convert().then(result=>parentPort.postMessage(result,result.pages.flatMap(page=>page.png?[page.png.buffer]:[]))).catch(error=>parentPort.postMessage({error:'PDF 全文转换失败：'+error.message}));

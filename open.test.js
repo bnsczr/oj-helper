@@ -1,7 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),sync=require('node:fs'),path=require('node:path'),os=require('node:os'),vm=require('node:vm');
 const {handle}=require('./native-host');
-const {readPreferences,clearDefaults,saveDefault}=require('./preferences');
+const {readPreferences,resetCliState,saveDefault}=require('./preferences');
 const {lastAddition,saveStatement,openStandings,main}=require('./open');
 const {saveStandings}=require('./standings-report');
 const {openInVSCode,findWindowsVSCode}=require('./editor');
@@ -66,15 +66,21 @@ test('单题、Dashboard 和再次单题的最近记录持久化，open s 覆盖
   let state=readPreferences(stateFile);assert.equal(state.lastAddition.kind,'problem');assert.equal(state.lastAddition.contest,'2278');
   const target=await saveStatement(state);assert.equal(target,path.join(directory,'statement.md'));assert.equal(await fs.readFile(target,'utf8'),first);
   await saveDefault(path.join(directory,'A.cpp'),'1B',stateFile);assert.equal(readPreferences(stateFile).lastAddition.contest,'2278');
-  const problems=['A','B1'].map(index=>({index,samples,statement:'# '+index+'. Problem\n\nDescription '+index+'\n\nAll samples: 1 2 3 4 5\n'}));
+  const inlineCode='`$$$code$$$`';
+  const originalMath=String.raw`Math $a$, $$$b$$$, and $$$1 \leq n$$$. Use ${inlineCode} literally.`;
+  const expectedMath=String.raw`Math $a$, $b$, and $1 \leq n$. Use ${inlineCode} literally.`;
+  const sampleBlock='````text\nAll samples: 1 2 3 4 5\n$$$sample$$$\n```\n````\n';
+  const problems=['A','B1'].map(index=>({index,samples,statement:'# '+index+'. Problem\n\nDescription '+index+'\n\n'+originalMath+'\n\n'+sampleBlock}));
   const batch=await handle({...request,action:'create-dashboard',url:'https://codeforces.com/contest/123',problems},options);assert.equal(batch.files.length,2);
   state=readPreferences(stateFile);assert.equal(state.lastAddition.kind,'contest');assert.equal(state.lastAddition.contest,'123');
   await saveStatement(state);const full=await fs.readFile(target,'utf8');assert.match(full,/# A\. Problem/);assert.match(full,/# B1\. Problem/);assert.equal(full.split('All samples').length-1,2);assert.doesNotMatch(full,/# D\. Test/);
+  assert.equal(full.split(expectedMath).length-1,2);
+  assert.equal(full.split(sampleBlock.trimEnd()).length-1,2);
   const before=state.lastAddition;
   assert.ok((await handle({...request,action:'create-dashboard',url:'https://codeforces.com/contest/1',problems:[{index:'A',samples:[]}]},options)).error);assert.deepEqual(readPreferences(stateFile).lastAddition,before);
   await handle({...request,action:'create',url:'https://codeforces.com/problemset/problem/999/C',statement:'# C. Latest'},options);
   await saveStatement(readPreferences(stateFile));assert.equal(await fs.readFile(target,'utf8'),'# C. Latest');
-  await clearDefaults(stateFile);assert.throws(()=>lastAddition(readPreferences(stateFile)),/没有添加记录/);
+  await resetCliState(stateFile);assert.throws(()=>lastAddition(readPreferences(stateFile)),/没有添加记录/);
   assert.equal(await fs.readFile(target,'utf8'),'# C. Latest');
  }finally{await fs.rm(directory,{recursive:true,force:true});}
 });

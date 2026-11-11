@@ -3,7 +3,7 @@ const fs=require('node:fs'),fsp=require('node:fs/promises'),path=require('node:p
 const {qojTarget,qojDashboard}=require('./extension/qoj');
 const {page,account,form,submission,card,zip,pdfDocument}=require('./test-support/qoj-fixtures');
 const {zipSamples,createQojFiles}=require('./qoj-files');
-const {readPreferences,clearDefaults,languageFor,fileKey}=require('./preferences');
+const {readPreferences,resetCliState,languageFor,fileKey}=require('./preferences');
 const {handle}=require('./native-host');
 const plain=value=>JSON.parse(JSON.stringify(value));
 const resource=(bytes,problem,type)=>({url:'https://qoj.ac/download.php?id='+problem+'&type='+type,base64:bytes.toString('base64')});
@@ -30,6 +30,22 @@ test('QOJ PDF 与附件使用真实下载路径，HTML 样例保留多组，多�
  assert.deepEqual(plain(p.run('readQojProblemPage().problem.samples')),[{input:'1\n\n2',output:'3'},{input:'4',output:'5'}]);
  p.document.querySelector('#form-answer').insertAdjacentHTML('beforeend','<div id="form-group-answer_config"></div>');assert.match(p.run('readQojProblemPage().error'),/多文件/);
 });
+test('QOJ 交互表保留双方列及顺序，多文件通信题可读题面且提示网页提交',async()=>{
+ const p=page('<h1 class="text-center">#123. Example</h1><div id="tab-statement"><p>这是一道通信题。</p><h3>Sample Interaction</h3><p>Example transcript:</p><table><tr><th>Your program</th><th>Interactor</th></tr><tr><td></td><td>3</td></tr><tr><td>? 1</td><td></td></tr><tr><td></td><td>2</td></tr></table></div>'+form);
+ p.document.querySelector('#form-answer').insertAdjacentHTML('beforeend','<div id="form-group-answer_second"><select name="answer_second_language"><option>C++</option></select></div>');
+ const {problem}=p.run('readQojProblemPage()');
+ assert.equal(problem.multiSource,true);assert.match(p.run('qojSourceForm().unsupported'),/多文件/);
+ const transcript='| Your program | Interactor |\n| --- | --- |\n|  | 3 |\n| ? 1 |  |\n|  | 2 |';
+ assert.equal(problem.samples.length,1);assert.equal(problem.samples[0].transcript,transcript);
+ assert.ok(problem.statement.includes(transcript));
+ const directory=await fsp.mkdtemp(path.join(os.tmpdir(),'qoj-communication-'));
+ try{
+  const result=await createQojFiles({action:'qoj-create',directory,problem},path.join(directory,'state.json'));
+  assert.ok(result.warnings.some(message=>message.includes('请使用网页提交')));
+  assert.ok((await fsp.readFile(result.path,'utf8')).includes(transcript));
+  assert.ok(result.addition.statement.includes(transcript));
+ }finally{await fsp.rm(directory,{recursive:true,force:true});}
+});
 test('QOJ 最后普通 Test 的 checker 不受 Extra Test 和源码输出混淆',()=>{
  const p=page(account+submission()+'<div id="details_details_accordion">'+card(1,'first')+card(25,'ok last ordinary')+card(1,'extra-one',true)+card(2,'extra-two',true)+'</div>','https://qoj.ac/submission/101');
  const result=p.run('readQojJudgement()');assert.equal(result.test,'Test #25');assert.equal(result.checker,'ok last ordinary');assert.equal(result.record.language,'C++23');assert.equal(result.record.score,'100');
@@ -46,7 +62,7 @@ test('QOJ ZIP 样例按文件配对且校验，其他附件不写入磁盘',()=>
  assert.throws(()=>zipSamples(zip({'1.in':'one'})),/缺少输入或输出/);
  const broken=zip({'1.in':'one','1.out':'two'},{compressed:false});broken[34]^=1;assert.throws(()=>zipSamples(broken),/校验失败/);
 });
-test('QOJ 文件保存 PDF、全部样例与逐文件映射，clear 仅清 QOJ 且不损失 CF',async()=>{
+test('QOJ 文件保存 PDF、全部样例与逐文件映射，重置命令行时保留已导出的文件',async()=>{
  const directory=await fsp.mkdtemp(path.join(os.tmpdir(),'qoj-create-')),stateFile=path.join(directory,'state.json');
  try{
   const cf={defaultProblem:'1A',fileProblems:{[fileKey(path.join(directory,'A.cpp'))]:'1A'},languages:{cpp:'GNU G++20'}};await fsp.writeFile(stateFile,JSON.stringify({...cf,activeOj:'qoj'}));
@@ -55,7 +71,8 @@ test('QOJ 文件保存 PDF、全部样例与逐文件映射，clear 仅清 QOJ �
   const result=await createQojFiles({action:'qoj-create',directory,problem,initialContent:'// template'},stateFile);
   assert.equal(result.name,'A.cpp');assert.match(await fsp.readFile(result.path,'utf8'),/样例 2/);assert.deepEqual(await fsp.readFile(path.join(directory,'statements','QOJ-123.pdf')),pdf);
   let state=readPreferences(stateFile);assert.match(state.qoj.lastAddition.statement,/statements\/QOJ-123.pdf/);assert.match(state.qoj.lastAddition.statement,/### 样例 1[\s\S]*输入：[\s\S]*1[\s\S]*输出：[\s\S]*2[\s\S]*### 样例 2[\s\S]*输入：[\s\S]*3[\s\S]*输出：[\s\S]*4/);assert.equal(state.qoj.fileProblems[fileKey(result.path)],problem.url);assert.equal(state.defaultProblem,'1A');assert.equal(languageFor('A.cpp',state),'C++23');
-  await clearDefaults(stateFile);state=readPreferences(stateFile);assert.equal(state.qoj.defaultProblem,null);assert.equal(state.defaultProblem,'1A');assert.deepEqual(state.languages,cf.languages);
+  await resetCliState(stateFile);state=readPreferences(stateFile);assert.equal(state.qoj,undefined);assert.equal(state.defaultProblem,undefined);assert.equal(state.languages,undefined);
+  assert.deepEqual(await fsp.readFile(path.join(directory,'statements','QOJ-123.pdf')),pdf);
  }finally{await fsp.rm(directory,{recursive:true,force:true});}
 });
 test('QOJ 批量预检失败不覆盖任何源码，附件解析失败明确反馈',async()=>{
@@ -86,7 +103,17 @@ test('QOJ 浏览器任务按账号、题目、语言核对且单次点击，完�
  current=page(account+'<h1 class="text-center">Example</h1><div id="tab-statement">Statement</div>'+form,job.url,{...shared,File:FakeFile,DataTransfer:FakeTransfer});
  const language=current.document.querySelector('select');let selected='C++23';Object.defineProperty(language,'value',{get:()=>selected,set:value=>selected=value});
  const file=current.document.querySelector('input[type="file"]');current.document.querySelector('button').click=()=>{clicks++;assert.equal(file.files[0].source,job.source);assert.ok(store.has('ojhelper-qoj-pending'));};current.document.contains=()=>false;
+ const draft=store.get('ojhelper-qoj-draft'),send=shared.chrome.runtime.sendMessage;
+ shared.chrome.runtime.sendMessage=async message=>message.result?.phase==='submitting'?{data:{cancelled:true}}:send(message);
+ await vm.runInContext(script,current.context);assert.equal(clicks,0);assert.equal(store.has('ojhelper-qoj-pending'),false);assert.match(events.at(-1).message,/提交已取消/);
+ shared.chrome.runtime.sendMessage=send;
+ store.set('ojhelper-qoj-key','27121:'+'a'.repeat(48));store.set('ojhelper-qoj-draft',draft);
  await vm.runInContext(script,current.context);assert.equal(clicks,1);
  current=page(account+submission(101)+'<div id="details_details_accordion">'+card(25,'last-checker')+card(2,'ignore-extra',true)+'</div>','https://qoj.ac/submission/101',shared);
+ const readJudgement=current.context.readQojJudgement;
+ current.context.readQojJudgement=(root,options)=>{
+  if(options?.includeChecker!==false)assert.match(events.at(-1).message,/^提交 QOJ #101：AC/);
+  return readJudgement(root,options);
+ };
  await vm.runInContext(script,current.context);assert.match(events.at(-1).message,/AC.*Test #25.*last-checker/);assert.equal(events.at(-1).final,true);assert.equal(clicks,1);assert.equal(store.has('ojhelper-qoj-pending'),false);
 });

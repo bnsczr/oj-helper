@@ -5,7 +5,10 @@ function pdfDocument(pages=['Problem description','Input','Output']){
  for(const lines of pages){
   const id=objects.length+1,contentId=id+1;kids.push(id+' 0 R');
   const texts=Array.isArray(lines)?lines:[lines];
-  const stream='BT /F1 12 Tf 40 740 Td '+texts.map((text,index)=>(index?'0 -24 Td ':'')+'('+text.replace(/([\\()])/g,'\\$1')+') Tj').join('\n')+' ET\n0 0 1 RG 40 100 200 50 re S';
+  const stream='BT /F1 12 Tf '+texts.map((entry,index)=>{
+   const {x,y,text}=typeof entry==='string'?{x:40,y:740-index*24,text:entry}:entry;
+   return '1 0 0 1 '+x+' '+y+' Tm ('+text.replace(/([\\()])/g,'\\$1')+') Tj';
+  }).join('\n')+' ET\n0 0 1 RG 40 100 200 50 re S';
   objects.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents '+contentId+' 0 R >>','<< /Length '+Buffer.byteLength(stream)+' >>\nstream\n'+stream+'\nendstream');
  }
  objects[1]='<< /Type /Pages /Kids ['+kids.join(' ')+'] /Count '+kids.length+' >>';

@@ -14,7 +14,10 @@
 <fieldset><legend>题目页面</legend>
 <label><input id="problemCpp" type="checkbox">打开该题 C++ 文件（默认开启）</label><br>
 <label><input id="problemStatement" type="checkbox">保存并打开该题 statement.md（默认关闭）</label></fieldset>
-<p>四个开关互相独立。关闭 C++ 自动打开仍会创建文件；关闭题面自动打开后，可随时用 open s 保存并打开题面。</p>
+<p>正常模式按页面应用以上四个开关。可随时用 open s 保存并打开题面。</p>
+<fieldset><legend>比赛模式</legend>
+<label><input id="contestCpp" type="checkbox">添加题目后打开 C++ 文件（默认关闭）</label>
+<p>开启后会补建缺少的空 C++ 文件，并在 VS Code 打开对应源码。已有文件保留原内容。</p></fieldset>
 <button id="saveOpenAfterAdd">保存自动打开设置</button><p id="openAfterAddStatus" role="status"></p>
 <h2>open b 好友榜单</h2>
 <label><input id="standingsShowUnofficial" type="checkbox">包含非正式参赛者（Show unofficial，默认开启）</label>

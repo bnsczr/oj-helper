@@ -1,6 +1,7 @@
 
 'use strict';
-const fs=require('node:fs'),path=require('node:path');
+const fs=require('node:fs'),path=require('node:path'),{randomUUID,randomInt}=require('node:crypto');
+const {contestReport,isPenaltyVerdict}=require('./extension/verdict');
 const preferencesFile=path.join(__dirname,'.submit-preferences.json');
 const ojModes={cf:{id:'cf',name:'Codeforces',available:true},qoj:{id:'qoj',name:'QOJ',available:true}};
 function ojModeFor(state={}){
@@ -25,23 +26,193 @@ function requireAvailableOj(state){
 }
 function profileFor(state,oj=ojModeFor(state).id){return oj==='cf'?state:(state.qoj||{});}
 function profilePatch(state,patch,oj){return oj==='cf'?patch:{qoj:{...state.qoj,...patch}};}
-async function updateOjPreferences(patch,oj,file=preferencesFile){
- return withStateLock(file,()=>updatePreferences(profilePatch(readPreferences(file),patch,oj),file));
+async function updateOjPreferences(patch,oj,file=preferencesFile,expectedVersion){
+ return withStateLock(file,()=>{
+  const state=readPreferences(file);
+  if(expectedVersion!==undefined&&(state.submissionHistoryVersion||0)!==expectedVersion)return state;
+  return updatePreferences(profilePatch(state,patch,oj),file);
+ });
 }
 function parseProblem(value,oj='cf'){
  if(oj==='qoj')return require('./extension/qoj').qojTarget(value);
- const m=/^([1-9]\d*)([a-z]\d*)$/i.exec(String(value).trim());
- if(!m)throw Error('请输入完整题号，例如 2278F 或 123B1。');
- return {contest:m[1],problem:m[2].toUpperCase()};
+ const input=String(value).trim();
+ const m=/^([1-9]\d*)([a-z]\d*)$/i.exec(input);
+ if(m)return {contest:m[1],problem:m[2].toUpperCase()};
+ const gym=/^https:\/\/(?:www\.)?codeforces\.com\/gym\/([1-9]\d*)\/problem\/([a-z]\d*)\/?(?:[?#].*)?$/i.exec(input);
+ if(gym)return {contest:gym[1],problem:gym[2].toUpperCase(),section:'gym'};
+ throw Error('请输入完整题号（例如 2278F）或 Gym 题目链接。');
+}
+function cfProblemKey({section,contest,problem}){
+ return section==='gym'?'https://codeforces.com/gym/'+contest+'/problem/'+problem:contest+problem;
 }
 function readPreferences(file=preferencesFile){
  try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch(e){if(e.code==='ENOENT')return {};throw Error('读取提交偏好失败：'+e.message);}
 }
 function updatePreferences(patch,file=preferencesFile){
- const state={...readPreferences(file),...patch};
+ const previous=readPreferences(file);
+ const state={...previous,...patch};
+ if((previous.activeOj??'cf')!==(state.activeOj??'cf')){
+  Object.assign(state,resetSubmissionHistory(previous));
+ }
+ return writePreferences(state,file);
+}
+function writePreferences(state,file){
  const temp=file+'.'+process.pid+'.tmp';
  try{fs.writeFileSync(temp,JSON.stringify(state,null,2)+'\n',{mode:0o600});fs.renameSync(temp,file);}finally{if(fs.existsSync(temp))fs.unlinkSync(temp);}
  return state;
+}
+function resetSubmissionHistory(state){
+ return {submissionHistory:[],submissionHistoryVersion:(state.submissionHistoryVersion||0)+1};
+}
+function headerColor(rgb){
+ const [red,green,blue]=rgb.map(channel=>{
+  const value=channel/255;
+  return value<=0.04045?value/12.92:((value+0.055)/1.055)**2.4;
+ });
+ const luminance=red*0.2126+green*0.7152+blue*0.0722;
+ const foreground=luminance>0.179?'30':'97';
+ // Public-domain Oklab conversion by Björn Ottosson.
+ // https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab
+ const l=Math.cbrt(0.4122214708*red+0.5363325363*green+0.0514459929*blue);
+ const m=Math.cbrt(0.2119034982*red+0.6806995451*green+0.1073969566*blue);
+ const s=Math.cbrt(0.0883024619*red+0.2817188376*green+0.6299787005*blue);
+ return {
+  ansi:foreground+';48;2;'+rgb.join(';'),distance:Infinity,
+  lab:[0.2104542553*l+0.7936177850*m-0.0040720468*s,
+   1.9779984951*l-2.4285922050*m+0.4505937099*s,
+   0.0259040371*l+0.7827717662*m-0.8086757660*s]
+ };
+}
+function contestHeaderColors(count){
+ if(!count)return [];
+ const levels=[32,64,96,128,160,192,224,255],candidates=[];
+ for(const red of levels)for(const green of levels)for(const blue of levels){
+  const candidate=headerColor([red,green,blue]);
+  if(candidate.lab[0]>=0.35&&candidate.lab[0]<=0.9)candidates.push(candidate);
+ }
+ const colors=[],used=new Set();
+ let next=candidates.splice(randomInt(candidates.length),1)[0];
+ // Each choice maximizes its visual difference from the closest existing color.
+ while(next&&colors.length<count){
+  colors.push(next.ansi);used.add(next.ansi);
+  let best=-1;
+  for(let i=0;i<candidates.length;i++){
+   const candidate=candidates[i];
+   const distance=(candidate.lab[0]-next.lab[0])**2+(candidate.lab[1]-next.lab[1])**2+(candidate.lab[2]-next.lab[2])**2;
+   candidate.distance=Math.min(candidate.distance,distance);
+   if(best<0||candidate.distance>candidates[best].distance)best=i;
+  }
+  next=best<0?undefined:candidates.splice(best,1)[0];
+ }
+ while(colors.length<count){
+  const color=headerColor([randomInt(48,241),randomInt(48,241),randomInt(48,241)]).ansi;
+  if(!used.has(color)){used.add(color);colors.push(color);}
+ }
+ for(let i=colors.length-1;i>0;i--){const other=randomInt(i+1);[colors[i],colors[other]]=[colors[other],colors[i]];}
+ return colors;
+}
+function newContestBoard(dashboard,problems,importId){
+ const colors=contestHeaderColors(problems.length);
+ return {
+  id:importId||randomUUID(),contest:dashboard.contest,section:dashboard.section,colorVersion:3,
+  ...(dashboard.startedAt?{startedAt:dashboard.startedAt}:{}),
+  problems:problems.map(({index,target},position)=>({index,target,headerColor:colors[position],tries:0,solved:false}))
+ };
+}
+function submissionStatusContext(state,spec){
+ return {
+  oj:spec.oj,version:state.submissionHistoryVersion||0,
+  boardId:profileFor(state,spec.oj).contestBoard?.id,
+  target:spec.oj==='qoj'?(spec.contest?spec.url:spec.problem):cfProblemKey(spec)
+ };
+}
+function recordContestAttempt(board,target,id,result){
+ const problem=board.problems.find(item=>item.target===target);
+ if(!problem||problem.solved||result?.submittedAt<board.startedAt)return false;
+ const runs=problem.runs||{};
+ if(!Object.hasOwn(runs,id)&&problem.lastRunId!==id)problem.tries++;
+ problem.lastRunId=id;
+ const runState=result?.state||(result?'final':'pending');
+ runs[id]=board.startedAt&&runState==='final'&&!result.solved&&isPenaltyVerdict(result.rawVerdict??result.verdict)?'rejected':runState;
+ problem.runs=runs;
+ problem.solved=!!result?.solved;
+ if(problem.solved&&board.startedAt&&Number.isSafeInteger(result.submittedAt)){
+  problem.solvedMinutes=Math.floor((result.submittedAt-board.startedAt)/60000);
+  const rejected=Object.values(runs).filter(state=>state==='rejected').length;
+  problem.penaltyMinutes=problem.solvedMinutes+20*rejected;
+ }
+ problem.pending=!problem.solved&&Object.values(runs).includes('pending');
+ return true;
+}
+function restoreContestBoard(state,site){
+ const profile=profileFor(state,site),addition=profile.lastAddition;
+ if(profile.contestBoard||addition?.kind!=='contest'||!addition.directory)return null;
+ const problems=new Map(),labels=new Map();
+ for(const [file,target] of Object.entries(profile.fileProblems||{})){
+  if(fileKey(path.dirname(file))!==fileKey(addition.directory))continue;
+  let parsed;try{parsed=parseProblem(target,site);}catch{continue;}
+  if(parsed.contest!==addition.contest||(parsed.section||'contest')!==(addition.section||'contest'))continue;
+  const index=site==='cf'?parsed.problem:path.parse(file).name.toUpperCase();
+  if(!/^[A-Z]+\d*$/.test(index))continue;
+  problems.set(index,{index,target});
+  const label=site==='qoj'?'QOJ #'+parsed.problem+' / 比赛 '+parsed.contest:(parsed.section==='gym'?'Gym ':'')+parsed.contest+parsed.problem;
+  labels.set(label,target);
+ }
+ if(!problems.size)return null;
+ const board=newContestBoard(addition,[...problems.values()].sort((a,b)=>a.index.localeCompare(b.index,'en',{numeric:true})),addition.importId);
+ // Older versions retained file mappings and recent results without a board.
+ for(const entry of [...(state.submissionHistory||[])].reverse()){
+  if(board.startedAt&&entry.boardId!==board.id)continue;
+  const target=entry.target||labels.get(entry.problem);
+  if(target)recordContestAttempt(board,target,entry.id,{...entry,solved:entry.solved??contestReport(entry.verdict,{qoj:site==='qoj'}).label==='CORRECT'});
+ }
+ return board;
+}
+async function recordSubmission(context,id,result,file=preferencesFile){
+ return withStateLock(file,()=>{
+  const state=readPreferences(file),board=profileFor(state,context.oj).contestBoard,patch={};
+  if(result&&(state.submissionHistoryVersion||0)===context.version&&ojModeFor(state).id===context.oj){
+   const recent=state.submissionHistory||[];
+   const existing=recent.findIndex(entry=>entry.id===id);
+   // Updating a pending run must keep its submission order.
+   const entry={...result,boardId:context.boardId};
+   patch.submissionHistory=existing<0?[entry,...recent].slice(0,10):recent.map(previous=>previous.id===id?entry:previous);
+  }
+  if(context.boardId&&board?.id===context.boardId&&recordContestAttempt(board,context.target,id,result)){
+   Object.assign(patch,profilePatch(state,{contestBoard:board},context.oj));
+  }
+  if(Object.keys(patch).length)updatePreferences(patch,file);
+ });
+}
+async function refreshSubmissionStatus(file=preferencesFile){
+ return withStateLock(file,()=>{
+  const state=readPreferences(file),site=ojModeFor(state).id,patch={};
+  const restored=restoreContestBoard(state,site);
+  if(restored)Object.assign(state,profilePatch(state,{contestBoard:restored},site));
+  const unavailable=entry=>{
+   if(entry.state!=='pending')return false;
+   if(entry.deadline&&Date.now()>=entry.deadline)return true;
+   if(!entry.monitorPid)return false;
+   try{process.kill(entry.monitorPid,0);return false;}catch(error){return error.code==='ESRCH';}
+  };
+  const unknown=new Set((state.submissionHistory||[]).filter(unavailable).map(entry=>entry.id));
+  if(unknown.size)patch.submissionHistory=state.submissionHistory.map(entry=>unknown.has(entry.id)?{...entry,state:'unknown',verdict:'UNKNOW'}:entry);
+  const board=profileFor(state,site).contestBoard;
+  const recolor=board&&board.colorVersion!==3;
+  if(recolor){
+   const colors=contestHeaderColors(board.problems.length);
+   board.problems.forEach((problem,index)=>{problem.headerColor=colors[index];});
+   board.colorVersion=3;
+  }
+  if(board&&(restored||unknown.size||recolor)){
+   if(unknown.size)for(const problem of board.problems){
+    for(const id of unknown)if(problem.runs?.[id]==='pending')problem.runs[id]='unknown';
+    problem.pending=!problem.solved&&Object.values(problem.runs||{}).includes('pending');
+   }
+   Object.assign(patch,profilePatch(state,{contestBoard:board},site));
+  }
+  return Object.keys(patch).length?updatePreferences(patch,file):state;
+ });
 }
 function languageType(file){
  const ext=path.extname(file).toLowerCase();
@@ -63,8 +234,11 @@ async function withStateLock(file,operation){
  if(!handle)throw Error('题号记录正在更新，请稍后重试。');
  try{return await operation();}finally{await handle.close();await fs.promises.unlink(lock);}
 }
-async function clearDefaults(file=preferencesFile,oj){return withStateLock(file,()=>{const state=readPreferences(file);return updatePreferences(profilePatch(state,{defaultProblem:null,fileProblems:{},assignments:{},lastAddition:null},oj||ojModeFor(state).id),file);});}
+async function resetCliState(file=preferencesFile){
+ // Retain the generation so a result from before clear cannot repopulate the state.
+ return withStateLock(file,()=>writePreferences({submissionHistoryVersion:resetSubmissionHistory(readPreferences(file)).submissionHistoryVersion},file));
+}
 async function saveDefault(file,problem,stateFile=preferencesFile,oj){
  return withStateLock(stateFile,()=>{const state=readPreferences(stateFile),site=oj||ojModeFor(state).id;parseProblem(problem,site);const profile=profileFor(state,site);return updatePreferences(profilePatch(state,{defaultProblem:problem,fileProblems:{...profile.fileProblems,[fileKey(file)]:problem}},site),stateFile);});
 }
-module.exports={preferencesFile,parseProblem,readPreferences,updatePreferences,languageType,languageFor,fileKey,defaultFor,sequenceName,withStateLock,clearDefaults,saveDefault,ojModeFor,selectOj,requireAvailableOj,profileFor,profilePatch,updateOjPreferences,verdictModeFor,selectVerdictMode};
+module.exports={preferencesFile,parseProblem,cfProblemKey,readPreferences,updatePreferences,languageType,languageFor,fileKey,defaultFor,sequenceName,withStateLock,resetCliState,saveDefault,ojModeFor,selectOj,requireAvailableOj,profileFor,profilePatch,updateOjPreferences,verdictModeFor,selectVerdictMode,newContestBoard,submissionStatusContext,recordSubmission,refreshSubmissionStatus};

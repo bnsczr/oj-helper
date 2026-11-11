@@ -26,9 +26,18 @@ test('c 永久修改即使稍后 n 取消；默认题号 y 直接使用',async()
  assert.equal(await confirmSubmission(input(['c','123B1','n']),spec,{saveProblem:x=>saved.push(x),log:()=>{}}),false);
  assert.deepEqual(saved,['123B1']);assert.equal(await confirmSubmission(input(['y']),spec),true);
 });
+test('c 接受 Gym 链接并在切换回普通题号时清除 Gym 路由',async()=>{
+ const spec={contest:'1',problem:'A',language:'GNU G++23'},saved=[];
+ const gym='https://codeforces.com/gym/106725/problem/H';
+ assert.equal(await confirmSubmission(input(['c',gym+'?locale=en','y']),spec,{saveProblem:x=>saved.push(x),log:()=>{}}),true);
+ assert.equal(spec.section,'gym');
+ await confirmSubmission(input(['c','2278F','y']),spec,{saveProblem:x=>saved.push(x),log:()=>{}});
+ assert.equal(spec.section,undefined);
+ assert.deepEqual(saved,[gym,'2278F']);
+});
 
 test('新题顺序分配、重复题复用、逐文件默认题号、清空后从 A 重置并按新规则覆盖模板',async()=>{
- const {createProblemFile}=require('./files-server');const {clearDefaults,saveDefault,defaultFor,sequenceName}=require('./preferences');
+ const {createProblemFile}=require('./files-server');const {resetCliState,saveDefault,defaultFor,sequenceName}=require('./preferences');
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'cf-sequence-')),file=path.join(dir,'prefs.json');
  try{
   updatePreferences({languages:{cpp:'GNU G++23'}},file);
@@ -38,7 +47,7 @@ test('新题顺序分配、重复题复用、逐文件默认题号、清空后�
   fs.writeFileSync(a.path,'keep source');const repeated=await createProblemFile(dir,url('D'),file);assert.equal(repeated.name,'A.cpp');assert.equal(repeated.existed,true);
   assert.equal(defaultFor(a.path,readPreferences(file)),'2278D');assert.equal(defaultFor(b.path,readPreferences(file)),'2278F');
   await saveDefault(b.path,'1A',file);assert.equal(defaultFor(b.path,readPreferences(file)),'1A');assert.equal(defaultFor(a.path,readPreferences(file)),'2278D');
-  await clearDefaults(file);let state=readPreferences(file);assert.equal(defaultFor(a.path,state),null);assert.deepEqual(state.assignments,{});assert.equal(state.languages.cpp,'GNU G++23');
+  await resetCliState(file);const state=readPreferences(file);assert.equal(defaultFor(a.path,state),undefined);assert.equal(state.assignments,undefined);assert.equal(state.languages,undefined);
   const reset=await createProblemFile(dir,url('E'),file);assert.equal(reset.name,'A.cpp');assert.equal(reset.existed,true);assert.equal(fs.readFileSync(a.path,'utf8'),DEFAULT_INITIAL_CONTENT);
   assert.equal((await createProblemFile(dir,url('G'),file)).name,'B.cpp');
   assert.equal(sequenceName(25),'Z.cpp');assert.equal(sequenceName(26),'AA.cpp');

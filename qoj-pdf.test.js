@@ -3,6 +3,7 @@ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:
 const {pdfToMarkdown}=require('./qoj-pdf'),{pdfDocument}=require('./test-support/qoj-fixtures');
 const {createQojFiles}=require('./qoj-files'),{main:open}=require('./open');
 const {readPreferences}=require('./preferences');
+const {handle}=require('./native-host');
 const pdfResource=(bytes,id)=>({url:'https://qoj.ac/download.php?type=statement&id='+id,base64:bytes.toString('base64')});
 async function fixture(run){const directory=await fs.mkdtemp(path.join(os.tmpdir(),'qoj-pdf-'));try{await run(directory,path.join(directory,'state.json'));}finally{await fs.rm(directory,{recursive:true,force:true});}}
 
@@ -11,6 +12,23 @@ test('PDF 转换读取所有页的正文和输入输出，页面图像保留图�
  assert.equal(result.pages.length,2);assert.match(result.pages[0].text,/Complete description[\s\S]*Input[\s\S]*An integer n[\s\S]*Output[\s\S]*minimum cost/);assert.match(result.pages[1].text,/Second page constraints/);
  for(const page of result.pages)assert.deepEqual(Buffer.from(page.png).subarray(0,8),Buffer.from([137,80,78,71,13,10,26,10]));
 });
+test('Codeforces 直接 PDF 题页转出正文和两栏样例，返回原件链接',()=>fixture(async(directory,stateFile)=>{
+ const secretFile=path.join(directory,'secret');
+ await fs.writeFile(secretFile,'paired');
+ const at=(text,x,y)=>({text,x,y});
+ const bytes=pdfDocument([[
+  'Example',at('standard input',100,716),at('standard output',340,716),
+  at('1',40,695),at('4.0',300,695),at('2 3',40,673),at('Note',40,645)
+ ],['Figure caption on second page']]);
+ const url='https://codeforces.com/gym/106725/problem/C';
+ const result=await handle({action:'pdf-statement',url,secret:'paired',base64:bytes.toString('base64')},{secretFile,stateFile});
+ assert.equal(result.error,undefined);
+ assert.equal(result.complete,true);
+ assert.deepEqual(result.samples,[{input:'1\n2 3',output:'4.0'}]);
+ assert.ok(result.statement.includes(url));
+ assert.match(result.statement,/Figure caption on second page/);
+ assert.deepEqual(await fs.readdir(directory),['secret']);
+}));
 
 test('Dashboard 保存每题完整 PDF 正文、全部页图像和样例，HTML 题面仍保留',async()=>fixture(async(directory,stateFile)=>{
  await createQojFiles({action:'qoj-create-dashboard',directory,url:'https://qoj.ac/contest/42',initialContent:'// template',problems:[

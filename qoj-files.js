@@ -2,12 +2,13 @@
 const fs=require('node:fs/promises'),path=require('node:path'),zlib=require('node:zlib');
 const {qojTarget,qojDashboard}=require('./extension/qoj');
 const {appendSamples}=require('./samples'),{DEFAULT_INITIAL_CONTENT}=require('./extension/template');
-const {preferencesFile,readPreferences,updatePreferences,fileKey,sequenceName,withStateLock,verdictModeFor}=require('./preferences');
+const {snapshotSources,pendingImport,writeImportedSource,preservedSourceWarning}=require('./files-server');
+const {preferencesFile,readPreferences,updatePreferences,fileKey,sequenceName,withStateLock,verdictModeFor,newContestBoard}=require('./preferences');
 const {pdfToMarkdown,pdfMarkdown,pdfAssets}=require('./qoj-pdf');
 const LIMIT=16*1024*1024;
 function sampleMarkdown(samples){
  const block=text=>{const fence='`'.repeat(Math.max(3,...(text.match(/`+/g)||[]).map(run=>run.length+1)));return fence+'text\n'+text+(text.endsWith('\n')?'':'\n')+fence;};
- return samples.length?'\n\n## 导入样例\n\n'+samples.map((sample,index)=>'### 样例 '+(index+1)+'\n\n输入：\n\n'+block(sample.input)+'\n\n输出：\n\n'+block(sample.output)).join('\n\n')+'\n':'';
+ return samples.length?'\n\n## 导入样例\n\n'+samples.map((sample,index)=>'### 样例 '+(index+1)+'\n\n'+(sample.transcript!==undefined?block(sample.transcript):'输入：\n\n'+block(sample.input)+'\n\n输出：\n\n'+block(sample.output))).join('\n\n')+'\n':'';
 }
 function resourceBytes(resource,problem,type){
  if(!resource)return null;
@@ -55,6 +56,7 @@ function prepareProblem(problem,index){
  if(problem.unsupported)throw Error('QOJ #'+target.problem+'：'+problem.unsupported+'；本次仅支持单文件源码题。');
  if(typeof problem.statement!=='string'||!problem.statement.trim())throw Error('QOJ #'+target.problem+' 题面未读取完整。');
  const warnings=[],pdf=resourceBytes(problem.pdf,target.problem,'statement'),attachment=resourceBytes(problem.attachment,target.problem,'problem');
+ if(problem.multiSource===true)warnings.push('QOJ #'+target.problem+' 需要提交多个文件，单文件 submit 不适用，请使用网页提交。');
  if(pdf&&!pdf.subarray(0,1024).includes(Buffer.from('%PDF-')))throw Error('QOJ PDF 下载结果不是 PDF，可能需要登录或验证。');
  let samples=problem.samples||[];appendSamples('',samples);
  if(attachment){
@@ -65,7 +67,7 @@ function prepareProblem(problem,index){
  const pdfName=pdf?'QOJ-'+target.problem+'.pdf':null;
  const statement=problem.statement;
  const contests=Array.from(new Set((problem.contests||[]).filter(id=>/^[1-9]\d*$/.test(id))));
- return {target,index,samples,pdf,pdfName,statement,contests,warnings};
+ return {target,index,samples,pdf,pdfName,pdfUrl:problem.pdf?.url,statement,contests,warnings};
 }
 async function ensureFile(target){try{if(!(await fs.lstat(target)).isFile())throw Error(path.basename(target)+' 不是普通文件，未覆盖。');return true;}catch(error){if(error.code==='ENOENT')return false;throw error;}}
 async function ensureAssetDirectory(directory){
@@ -88,7 +90,7 @@ async function upgradeQojStatement(addition){
  const statement=addition.statement.replace(/\[PDF 题面原件\]\(statements\/QOJ-([1-9]\d*)\.pdf\)/g,(link,id)=>pdfMarkdown(converted.get(id),id)+'\n'+link);
  return {...addition,statement,statementVersion:2};
 }
-async function createQojFiles(message,stateFile=preferencesFile){
+async function createQojFiles(message,stateFile=preferencesFile,{importId,finishId,earlyMapping,startedAt}={}){
  const {directory}=message;if(typeof directory!=='string'||!path.isAbsolute(directory))throw Error('保存目录必须是绝对路径。');if(!(await fs.stat(directory)).isDirectory())throw Error('保存目录不存在。');
  const initial=message.initialContent===undefined?DEFAULT_INITIAL_CONTENT:message.initialContent;if(typeof initial!=='string')throw Error('初始内容必须是文本。');
  const dashboard=message.action==='qoj-create-dashboard'?qojDashboard(message.url):null;
@@ -100,13 +102,19 @@ async function createQojFiles(message,stateFile=preferencesFile){
   problem.assets=[];
   if(problem.pdf){
    const converted=await pdfToMarkdown(problem.pdf);problem.assets=pdfAssets(converted,problem.target.problem);
+   problem.contestStatement=problem.statement+'\n\n[PDF 题面原件]('+new URL(problem.pdfUrl).href+')\n\n'+converted.pages.map(page=>page.text).join('\n\n');
    problem.statement+=pdfMarkdown(converted,problem.target.problem)+'\n\n[PDF 题面原件](statements/'+problem.pdfName+')\n';
    if(converted.pages.some(page=>!page.text))problem.warnings.push('QOJ #'+problem.target.problem+' 的部分 PDF 页面没有可提取文字，已在 Markdown 中完整嵌入页面图像。');
   }
   problem.statement+=sampleMarkdown(problem.samples);
  }
  return withStateLock(stateFile,async()=>{
-  const state=readPreferences(stateFile),emptySource=verdictModeFor(state)==='contest',profile=state.qoj||{},directoryKey=fileKey(directory),old=profile.assignments?.[directoryKey]||{next:0,problems:{}};
+  const state=readPreferences(stateFile),profile=state.qoj||{},directoryKey=fileKey(directory),old=profile.assignments?.[directoryKey]||{next:0,problems:{}};
+  const url=dashboard?.url||prepared[0].target.url,kind=dashboard?'contest':'problem';
+  const plan=pendingImport(state,'qoj',finishId,url,directory,kind);
+  const emptySource=!plan&&verdictModeFor(state)==='contest';
+  if(importId&&!emptySource&&!earlyMapping)return {mappingOnly:false};
+  const writeFiles=!emptySource&&!importId;
   let next=dashboard?0:old.next,assigned=dashboard?{}:{...old.problems};
   const fileProblems={...profile.fileProblems};
   for(const problem of prepared){
@@ -114,23 +122,32 @@ async function createQojFiles(message,stateFile=preferencesFile){
    problem.name=dashboard?problem.index+'.cpp':emptySource?((problem.target.contest&&problem.index)||problem.target.problem)+'.cpp':known||sequenceName(next++);
    for(const id of Object.keys(assigned))if(assigned[id]===problem.name)delete assigned[id];
    assigned[problem.target.problem]=problem.name;
-   problem.path=path.join(directory,problem.name);problem.existed=await ensureFile(problem.path);problem.defaultProblem=problem.target.contest?problem.target.url:problem.target.problem;
-   if(problem.pdf){await ensureFile(path.join(directory,'statements',problem.pdfName));for(const asset of problem.assets)await ensureFile(path.join(directory,'statements',asset.name));}
+   problem.path=path.join(directory,problem.name);if(writeFiles)problem.existed=await ensureFile(problem.path);problem.defaultProblem=problem.target.contest?problem.target.url:problem.target.problem;
+   if(writeFiles&&problem.pdf){await ensureFile(path.join(directory,'statements',problem.pdfName));for(const asset of problem.assets)await ensureFile(path.join(directory,'statements',asset.name));}
   }
-  if(prepared.some(problem=>problem.pdf)){
+  const sourceVersions=importId&&!emptySource?await snapshotSources(prepared):undefined;
+  if(writeFiles&&prepared.some(problem=>problem.pdf)){
    if(!await ensureAssetDirectory(directory))await fs.mkdir(path.join(directory,'statements'));
   }
   for(const problem of prepared){
-   if(problem.pdf)await fs.writeFile(path.join(directory,'statements',problem.pdfName),problem.pdf);
-   for(const asset of problem.assets)await fs.writeFile(path.join(directory,'statements',asset.name),asset.bytes);
-   await fs.writeFile(problem.path,emptySource?'':appendSamples(initial,problem.samples),'utf8');fileProblems[fileKey(problem.path)]=problem.defaultProblem;
+   if(writeFiles){
+    if(problem.pdf)await fs.writeFile(path.join(directory,'statements',problem.pdfName),problem.pdf);
+    for(const asset of problem.assets)await fs.writeFile(path.join(directory,'statements',asset.name),asset.bytes);
+    problem.sourcePreserved=!await writeImportedSource(problem,appendSamples(initial,problem.samples),plan);
+    if(problem.sourcePreserved)problem.warnings.push(preservedSourceWarning(problem));
+   }
+   fileProblems[fileKey(problem.path)]=problem.defaultProblem;
   }
   while(Object.values(assigned).includes(sequenceName(next)))next++;
-  const statement=prepared.map(problem=>problem.statement).join('\n\n---\n\n'),single=prepared[0];
-  const addition={oj:'qoj',kind:dashboard?'contest':'problem',contest:dashboard?.contest||single.target.contest,problem:dashboard?undefined:single.target.problem,section:'contest',url:dashboard?.url||single.target.url,directory,statement,statementVersion:2,contests:dashboard?[dashboard.contest]:single.contests};
-  updatePreferences({activeOj:'qoj',qoj:{...profile,lastAddition:addition,defaultProblem:prepared.at(-1).defaultProblem,fileProblems,assignments:{...profile.assignments,[directoryKey]:{next,problems:assigned}}}},stateFile);
-  const files=prepared.map(problem=>({name:problem.name,path:problem.path,existed:problem.existed,defaultProblem:problem.defaultProblem,sampleCount:emptySource?0:problem.samples.length}));
-  return {oj:'qoj',...(dashboard?{contest:dashboard.contest,files}:files[0]),...(emptySource?{emptySource}: {}),addition,warnings:prepared.flatMap(problem=>problem.warnings)};
+  const statement=prepared.map(problem=>emptySource&&problem.contestStatement?problem.contestStatement+sampleMarkdown(problem.samples):problem.statement).join('\n\n---\n\n'),single=prepared[0];
+  const addition={oj:'qoj',kind,contest:dashboard?.contest||single.target.contest,problem:dashboard?undefined:single.target.problem,section:'contest',url,directory,statement:importId?null:statement,importId:plan?.importId??importId,startedAt:plan?.startedAt??startedAt,sourceVersions,statementVersion:2,contests:dashboard?[dashboard.contest]:single.contests};
+  if(plan)updatePreferences({qoj:{...profile,lastAddition:addition}},stateFile);
+  else{
+   const contestBoard=dashboard?newContestBoard(addition,prepared.map(problem=>({index:problem.index,target:problem.defaultProblem})),importId):profile.contestBoard;
+   updatePreferences({activeOj:'qoj',qoj:{...profile,lastAddition:addition,defaultProblem:prepared.at(-1).defaultProblem,fileProblems,contestBoard,assignments:{...profile.assignments,[directoryKey]:{next,problems:assigned}}}},stateFile);
+  }
+  const files=prepared.map(problem=>({name:problem.name,path:problem.path,existed:problem.existed,defaultProblem:problem.defaultProblem,sampleCount:writeFiles&&!problem.sourcePreserved?problem.samples.length:0}));
+  return {oj:'qoj',...(dashboard?{contest:dashboard.contest,files}:files[0]),...(importId||emptySource?{mappingOnly:emptySource,importId}: {}),addition,warnings:importId?[]:prepared.flatMap(problem=>problem.warnings)};
  });
 }
-module.exports={resourceBytes,zipSamples,prepareProblem,createQojFiles,upgradeQojStatement};
+module.exports={resourceBytes,zipSamples,prepareProblem,createQojFiles,upgradeQojStatement,sampleMarkdown};

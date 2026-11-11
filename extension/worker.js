@@ -1,8 +1,21 @@
 if(typeof importScripts==='function')importScripts('qoj.js','qoj-page.js','qoj-worker.js','problem.js','dashboard.js','standings.js');
+let lastSubmissionKey;
+async function openSubmissionTask(task,url){
+  const token=task.key.split(':')[1];
+  const duplicate=lastSubmissionKey===task.key;
+  lastSubmissionKey=task.key;
+  await fetch('http://127.0.0.1:27121/claim?token='+token,{method:'POST',signal:AbortSignal.timeout(700)}).catch(()=>{});
+  if(duplicate)return;
+  try{await chrome.tabs.create({active:false,url});}
+  catch(error){
+    const result={message:'无法打开提交页面：'+error.message,final:true,ok:false};
+    await fetch('http://127.0.0.1:27121/result?token='+token,{method:'POST',body:JSON.stringify(result),signal:AbortSignal.timeout(700)});
+  }
+}
 async function poll(){
   try{
     const {bridgeSecret}=await chrome.storage.local.get('bridgeSecret');if(!bridgeSecret)return;
-    const r=await fetch('http://127.0.0.1:27121/pending',{headers:{Authorization:`Bearer ${bridgeSecret}`,'X-Oj-Helper-Platforms':'cf,qoj','X-Oj-Helper-Contest-Mode':'1'},signal:AbortSignal.timeout(4000)});if(!r.ok)return;
+    const r=await fetch('http://127.0.0.1:27121/pending',{headers:{Authorization:`Bearer ${bridgeSecret}`,'X-Oj-Helper-Platforms':'cf,qoj','X-Oj-Helper-Contest-Mode':'1','X-Oj-Helper-Gym':'1','X-Oj-Helper-Receipt':'1'},cache:'no-store',signal:AbortSignal.timeout(900)});if(!r.ok)return;
     const task=await r.json();if(!/^27121:[a-f0-9]{48}$/.test(task.key))return;
     if(task.oj==='qoj'&&task.action==='qoj-inspect'){
       const pages=[];const tabs=await chrome.tabs.query({url:'https://qoj.ac/*'});
@@ -38,7 +51,7 @@ async function poll(){
         await fetch('http://127.0.0.1:27121/result?token='+task.key.split(':')[1],{method:'POST',body:JSON.stringify(result),signal:AbortSignal.timeout(4000)});return;
       }
       if(task.action||! /^[1-9]\d*$/.test(task.problem))return;
-      await chrome.tabs.create({active:false,url:'https://qoj.ac/'+(task.contest?'contest/'+task.contest+'/':'')+'submissions#qojhelper='+task.key});return;
+      await openSubmissionTask(task,'https://qoj.ac/'+(task.contest?'contest/'+task.contest+'/':'')+'submissions#qojhelper='+task.key);return;
     }
     if(! /^[1-9]\d*$/.test(task.contest))return;
     if(task.action==='open-standings'){
@@ -49,11 +62,17 @@ async function poll(){
       await fetch('http://127.0.0.1:27121/result?token='+task.key.split(':')[1],{method:'POST',body:JSON.stringify(result),signal:AbortSignal.timeout(4000)});return;
     }
     if(task.action||! /^[A-Z]\d*$/.test(task.problem))return;
-    await chrome.tabs.create({active:false,url:`https://codeforces.com/problemset/status?my=on#cfhelper=${task.key}`});
+    const section=task.section==='gym'?'gym':'contest';
+    await openSubmissionTask(task,`https://codeforces.com/${section}/${task.contest}/my#cfhelper=${task.key}`);
   }catch{}
 }
 chrome.alarms.create('cfhelper-poll',{periodInMinutes:0.5});
-let wakePort=null,wakeConnecting=false;
+let wakePort=null,wakeConnecting=false,reconnectTimer,reconnectDelay=200;
+function reconnectWakeup(){
+  if(reconnectTimer)return;
+  reconnectTimer=setTimeout(()=>{reconnectTimer=undefined;connectWakeup();},reconnectDelay);
+  reconnectDelay=Math.min(reconnectDelay*2,30000);
+}
 async function connectWakeup(){
   if(!chrome.runtime.connectNative||wakePort||wakeConnecting)return;
   wakeConnecting=true;
@@ -62,17 +81,28 @@ async function connectWakeup(){
     const port=chrome.runtime.connectNative('com.codeforces_helper.local');wakePort=port;
     port.onMessage.addListener(message=>{
       if(wakePort!==port)return;
-      if(message.event==='ready'||message.event==='bridge-ready')poll();
-      else if(message.error){wakePort=null;port.disconnect();}
+      if(message.event==='ready'||message.event==='bridge-ready'){reconnectDelay=200;poll();}
+      else if(message.error){wakePort=null;port.disconnect();reconnectWakeup();}
     });
-    port.onDisconnect.addListener(()=>{void chrome.runtime.lastError;if(wakePort===port)wakePort=null;});
+    port.onDisconnect.addListener(()=>{
+      void chrome.runtime.lastError;
+      if(wakePort===port){wakePort=null;reconnectWakeup();}
+    });
     port.postMessage({action:'watch',secret:bridgeSecret});
-  }catch{if(wakePort){try{wakePort.disconnect();}catch{}wakePort=null;}}
+  }catch{
+    if(wakePort){const old=wakePort;wakePort=null;try{old.disconnect();}catch{}}
+    reconnectWakeup();
+  }
   finally{wakeConnecting=false;}
 }
 chrome.alarms.onAlarm.addListener(a=>{if(a.name==='cfhelper-poll'){poll();connectWakeup();}});
 chrome.storage.onChanged?.addListener((changes,area)=>{
-  if(area==='local'&&changes.bridgeSecret){if(wakePort){const old=wakePort;wakePort=null;old.disconnect();}connectWakeup();poll();}
+  if(area==='local'&&changes.bridgeSecret){
+    if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=undefined;}
+    reconnectDelay=200;
+    if(wakePort){const old=wakePort;wakePort=null;old.disconnect();}
+    connectWakeup();poll();
+  }
 });
 async function restoreShortcuts(){
   if(!chrome.scripting?.executeScript||!chrome.tabs?.query)return;
@@ -106,7 +136,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
       const source=s.tab||((s.url===chrome.runtime.getURL('popup.html')&&Number.isInteger(m.tabId))?await chrome.tabs.get(m.tabId):null);
       if(!source)throw Error('QOJ 添加来源无效。');
       const url=s.tab?s.url:source.url;if(!qojDashboard(url))qojTarget(url);
-      return qojAddFromTab(source.id,url);
+      return qojAddFromTab(source.id,url,s.tab?m.startedAt:undefined);
     })().then(reply).catch(error=>reply({error:error.message}));return true;
   }
   if(m.action==='cfhelper-add-dashboard'){
@@ -114,19 +144,19 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
       const source=s.tab||((s.url===chrome.runtime.getURL('popup.html')&&Number.isInteger(m.tabId))?await chrome.tabs.get(m.tabId):null);
       if(!source)throw Error('批量操作来源无效。');
       const url=s.tab?s.url:source.url;
-      return createDashboardFiles(source.id,url,m.problems);
+      return createDashboardFiles(source.id,url,m.problems,s.tab?m.startedAt:undefined);
     })().then(reply).catch(e=>reply({error:e.message}));return true;
   }
   if(m.action==='cfhelper-add-problem'){
-    let url;try{url=new URL(s.url);}catch{return;}
-    if(!s.tab||(url.protocol!=='https:'||!['codeforces.com','www.codeforces.com'].includes(url.hostname)||url.port)||!/^\/(?:problemset\/problem\/[1-9]\d*\/[a-z]\d*|(?:contest|gym)\/[1-9]\d*\/problem\/[a-z]\d*)\/?$/i.test(url.pathname))return;
+    if(s.tab){
+      try{problemFromUrl(s.url);}catch{return;}
+    }else if(!Number.isInteger(m.tabId)||s.url!==chrome.runtime.getURL('popup.html'))return;
     (async()=>{
-      const {bridgeSecret,directory,initialContent,openAfterAdd}=await chrome.storage.local.get(['bridgeSecret','directory','initialContent','openAfterAdd']);
-      if(!directory?.trim())throw Error('尚未设置保存目录，请打开扩展设置填写。');
-      if(!bridgeSecret)throw Error('尚未配对，请在扩展设置中完成配对。');
-      let data;try{data=await chrome.runtime.sendNativeMessage('com.codeforces_helper.local',{action:'create',secret:bridgeSecret,url:url.href,directory,initialContent,samples:m.samples,statement:m.statement,openAfterAdd:openAfterAdd||{}});}
-      catch{throw Error('尚未连接本机助手，请运行一次 submit --install-native '+chrome.runtime.id);}
-      return data;
+      const source=s.tab||((s.url===chrome.runtime.getURL('popup.html')&&Number.isInteger(m.tabId))?await chrome.tabs.get(m.tabId):null);
+      if(!source)throw Error('题目来源无效。');
+      const url=s.tab?s.url:source.url;
+      problemFromUrl(url);
+      return createCfProblem(source.id,url,m);
     })().then(reply).catch(e=>reply({error:e.message}));return true;
   }
   if(m.poll&&s.url===chrome.runtime.getURL('options.html')){poll();connectWakeup();reply({});return;}

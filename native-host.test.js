@@ -39,7 +39,7 @@ test('自动检测扩展只返回本助手 ID',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'cf-detect-'));try{
  const profile=path.join(dir,'Microsoft/Edge/User Data/Default');await fs.mkdir(profile,{recursive:true});
  const id='a'.repeat(32),legacyId='c'.repeat(32);await fs.writeFile(path.join(profile,'Secure Preferences'),JSON.stringify({extensions:{settings:{[id]:{manifest:{name:'oj-helper'}},[legacyId]:{manifest:{name:'Codeforces Helper Local'}},['b'.repeat(32)]:{manifest:{name:'Other'}}}}}));
- assert.deepEqual(detectExtensionIds(dir),[id,legacyId]);
+ assert.deepEqual(detectExtensionIds(dir,{platform:'win32'}),[id,legacyId]);
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
 

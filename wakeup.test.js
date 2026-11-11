@@ -1,7 +1,8 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),sync=require('node:fs'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto'),net=require('node:net'),vm=require('node:vm');
 const {spawn}=require('node:child_process'),{once}=require('node:events');
-const {wakeAddress,createWakeListener,notifyBrowser}=require('./wakeup');
+const {wakeAddress,createWakeListener,notifyBrowser,notifyUntilReceived}=require('./wakeup');
+const {createBridge}=require('./bridge');
 const {encode}=require('./native-host');
 
 test('本机即时通知验证配对信息，连接缺失或无响应时限时回退',async()=>{
@@ -67,17 +68,53 @@ test('真实无窗口启动器持续转发通知，关闭浏览器输入即可�
  }finally{await fs.rm(directory,{recursive:true,force:true});}
 });
 
-test('扩展由本机通知立即领取任务，不等待 alarm；断连及重新配对后可恢复',async()=>{
- const ports=[],created=[],handlers={};let secret='paired',pending=false;
+test('扩展由本机通知立即领取任务，不等待 alarm；断连自动重连',async()=>{
+ const ports=[],created=[],handlers={},retry=[];let secret='paired',pending=false;
  const chrome={storage:{local:{get:async()=>({bridgeSecret:secret})},onChanged:{addListener:fn=>handlers.storage=fn}},alarms:{create:()=>{},onAlarm:{addListener:fn=>handlers.alarm=fn}},runtime:{onStartup:{addListener:fn=>handlers.start=fn},onInstalled:{addListener:()=>{}},onMessage:{addListener:()=>{}},connectNative:name=>{
   assert.equal(name,'com.codeforces_helper.local');const callbacks={},sent=[];
   const port={sent,onMessage:{addListener:fn=>callbacks.message=fn},onDisconnect:{addListener:fn=>callbacks.disconnect=fn},postMessage:message=>sent.push(message),disconnect:()=>callbacks.disconnect(),receive:message=>callbacks.message(message)};ports.push(port);return port;
  }},tabs:{create:async options=>created.push(options)}};
  const flush=()=>new Promise(resolve=>setImmediate(resolve));
- vm.runInNewContext(sync.readFileSync(require.resolve('./extension/worker'),'utf8'),{chrome,AbortSignal,fetch:async()=>({ok:true,json:async()=>pending?(pending=false,{key:'27121:'+'a'.repeat(48),contest:'1',problem:'A'}):{}})});
+ vm.runInNewContext(sync.readFileSync(require.resolve('./extension/worker'),'utf8'),{chrome,AbortSignal,
+  setTimeout:(fn,ms)=>{retry.push({fn,ms});return retry.length;},clearTimeout:()=>{},
+  fetch:async()=>({ok:true,json:async()=>pending?(pending=false,{key:'27121:'+'a'.repeat(48),contest:'1',problem:'A'}):{}})});
  await flush();assert.equal(ports.length,1);assert.equal(ports[0].sent[0].action,'watch');assert.equal(ports[0].sent[0].secret,'paired');assert.equal(created.length,0);
  pending=true;ports[0].receive({event:'bridge-ready'});await flush();assert.equal(created.length,1);assert.equal(created[0].active,false);
  ports[0].receive({event:'bridge-ready'});await flush();assert.equal(created.length,1,'同一任务不能被通知重复提交');
- ports[0].disconnect();handlers.start();await flush();assert.equal(ports.length,2);
+ ports[0].disconnect();assert.equal(retry[0].ms,200);retry[0].fn();await flush();assert.equal(ports.length,2);
  secret='new-secret';handlers.storage({bridgeSecret:{newValue:secret}},'local');await flush();assert.equal(ports.length,3);assert.equal(ports[2].sent[0].secret,secret);
+});
+
+test('本机连接短暂未就绪时，重试到扩展确认仍在 3 秒内',async()=>{
+ const secret=crypto.randomBytes(32).toString('hex'),token='a'.repeat(48),receipt=new AbortController();
+ const tabs=[],browserRequests=[];let ready=false;
+ const bridge=createBridge({secret,token,job:{oj:'cf',contest:'42',problem:'A'},onEvent:()=>{},onReceive:()=>receipt.abort()});
+ await new Promise(resolve=>bridge.listen(0,'127.0.0.1',resolve));
+ const chrome={storage:{local:{get:async()=>({bridgeSecret:secret})}},alarms:{create:()=>{},onAlarm:{addListener:()=>{}}},
+  runtime:{onStartup:{addListener:()=>{}},onInstalled:{addListener:()=>{}},onMessage:{addListener:()=>{}}},tabs:{create:async options=>tabs.push(options)}};
+ const browser=vm.createContext({chrome,AbortSignal,fetch:(url,options)=>{
+  if(!ready)return Promise.resolve({ok:false});
+  browserRequests.push(url);
+  return fetch(url.replace(':27121',':'+bridge.address().port),options);
+ }});
+ vm.runInContext(sync.readFileSync(require.resolve('./extension/worker'),'utf8'),browser);
+ // The initial poll represents an already running extension with no job yet.
+ await new Promise(resolve=>setImmediate(resolve));
+ ready=true;
+ let native;
+ const connect=setTimeout(()=>{native=createWakeListener(secret,()=>{void browser.poll();});},400);
+ const started=performance.now();
+ try{
+  await notifyUntilReceived(secret,receipt.signal);
+  assert.equal(receipt.signal.aborted,true);
+  assert.ok(native,'确认必须来自本机连接恢复后的通知');
+  assert.ok(performance.now()-started<3000);
+  for(let attempt=0;attempt<20&&!tabs.length;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(tabs.length,1);
+  assert.equal(browserRequests.filter(url=>url.includes('/claim?')).length,1);
+ }finally{
+  clearTimeout(connect);
+  if(native)await new Promise(resolve=>native.close(resolve));
+  bridge.closeAllConnections();await new Promise(resolve=>bridge.close(resolve));
+ }
 });

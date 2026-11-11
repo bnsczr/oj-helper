@@ -1,14 +1,24 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
+const {parseHTML}=require('linkedom');
 const {readSamples}=require('./extension/samples');const {appendSamples}=require('./samples');const {createProblemFile}=require('./files-server');
-const t=value=>({nodeType:3,nodeValue:value});const e=(name,...children)=>({nodeType:1,nodeName:name,childNodes:children});
-function page(inputs,outputs){return {querySelector:()=>null,querySelectorAll:selector=>selector.includes('.input')?inputs:outputs};}
+const page=html=>parseHTML('<div class="problem-statement"><div class="header"><div class="title">A. Example</div></div>'+html+'</div>').document;
 test('读取全部样例，兼容 br、逐行 div 和文本换行，保留空行',()=>{
- const root=page([e('PRE',t('2'),e('BR'),t('1 2'),e('BR'),e('BR'),t('3 4')),e('PRE',e('DIV',t('5')),e('DIV',t('6 7')))],[e('PRE',t('3\n\n7\n')),e('PRE',e('DIV',t('11')))]);
+ const root=page('<div class="sample-test"><div class="input"><pre>2<br>1 2<br><br>3 4</pre></div><div class="output"><pre>3\n\n7\n</pre></div><div class="input"><pre><div>5</div><div>6 7</div></pre></div><div class="output"><pre><div>11</div></pre></div></div>');
  assert.deepEqual(readSamples(root),[{input:'2\n1 2\n\n3 4',output:'3\n\n7'},{input:'5\n6 7',output:'11'}]);
 });
 test('样例缺失或输入输出不配对时报告错误，不悄悄遗漏',()=>{
- assert.throws(()=>readSamples(page([],[])),/完整样例/);assert.throws(()=>readSamples(page([e('PRE',t('1'))],[])),/完整样例/);
+ assert.throws(()=>readSamples(page('')),/完整样例/);
+ assert.throws(()=>readSamples(page('<div class="sample-test"><div class="input"><pre>1</pre></div></div><div class="sample-test"><div class="output"><pre>2</pre></div></div>')),/完整样例/);
+});
+test('CF 交互样例保留开头空行，通信样例保留每次运行并允许没有普通样例',()=>{
+ const root=page('<p>This is an interactive problem.</p><div class="sample-test"><div class="input"><pre><div>3</div><div><br></div><div>1</div></pre></div><div class="output"><pre><div><br></div><div>? 2</div><div><br></div></pre></div></div>');
+ assert.deepEqual(readSamples(root),[{input:'3\n\n1',output:'\n? 2\n'}]);
+ const run=(name,value)=>'<div class="input"><pre>'+name+'\n'+value+'</pre></div><div class="output"><pre>'+value+'</pre></div>';
+ const description='<p>This is a run-twice (communication) problem.</p>';
+ assert.deepEqual(readSamples(page(description+'<div class="sample-test">'+run('first',4)+run('second',7)+'</div>')),[{input:'first\n4',output:'4'},{input:'second\n7',output:'7'}]);
+ assert.deepEqual(readSamples(page(description)),[]);
+ assert.match(appendSamples('',readSamples(page(description+'<div class="sample-test"><pre>first → second</pre></div>'))),/样例 1\nfirst → second/);
 });
 test('末尾注释包含每组输入输出，并防止样例中的结束标记破坏代码',()=>{
  const result=appendSamples('int main(){}',[{input:'1\n2',output:'3'},{input:'*/',output:'ok'}]);
