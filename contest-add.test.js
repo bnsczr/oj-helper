@@ -40,6 +40,49 @@ test('CF Dashboard 先建立所有映射，稍后缓存题面，已有源码及�
  assert.match(await fs.readFile(path.join(directory,'statement.md'),'utf8'),/First problem[\s\S]*Second problem/);
 }));
 
+test('赛时恢复合并完整提交、保留最近十条，续赛后按首个 AC 重算罚时',()=>fixture(async({directory,stateFile,add})=>{
+ const url='https://codeforces.com/gym/106725',now=Date.now(),startedAt=now-3600000,endsAt=now+3600000;
+ const participant='virtual:tester',problems=[{index:'A'},{index:'B'}];
+ const prepare=(sessionEnd=endsAt)=>add({action:'prepare-import',oj:'cf',url,problems,earlyMapping:true,recoverSession:{participant,endsAt:sessionEnd,virtual:true}});
+ const {importId}=await prepare();
+ const spec={oj:'cf',contest:'106725',section:'gym',problem:'B'};
+ const context=submissionStatusContext(readPreferences(stateFile),spec);
+ const submission=(id,index,minutes,verdict,state='final')=>({id:String(id),index,submittedAt:startedAt+minutes*60000,verdict,state});
+ const runs=[submission(1,'A',1,'Wrong answer'),submission(2,'A',3,'Compilation error'),submission(3,'A',20,'Accepted'),
+  ...Array.from({length:11},(_,i)=>submission(4+i,'A',21+i,'Accepted'))];
+ const local=submission(15,'B',40,'pending','pending');
+ await recordSubmission(context,local.id,{...local,problem:'Gym 106725B',file:'B.cpp'},stateFile);
+ const recover=(id,submissions,start=startedAt,end=endsAt)=>add({action:'recover-contest-submissions',oj:'cf',importId:id,session:{startedAt:start,endsAt:end,participant,submissions}});
+ assert.equal((await recover(importId,runs)).restored,15);
+ let state=readPreferences(stateFile);
+ assert.deepEqual(state.submissionHistory.map(entry=>entry.id),Array.from({length:10},(_,i)=>String(15-i)));
+ assert.equal(state.contestBoard.startedAt,startedAt);
+ assert.equal(state.contestBoard.problems[0].tries,3);
+ assert.equal(state.contestBoard.problems[0].penaltyMinutes,40);
+ assert.equal(state.contestBoard.problems[1].pending,true);
+
+ await selectVerdictMode('normal',stateFile);
+ await fs.writeFile(path.join(directory,'A.cpp'),'my existing solution');
+ const again=await prepare();
+ assert.equal(readPreferences(stateFile).contestBoard.id,context.boardId);
+ await recover(again.importId,[...runs,submission(15,'B',40,'Wrong answer')]);
+ await add({action:'create-dashboard',oj:'cf',url,finishId:again.importId,problems:problems.map(problem=>({...problem,samples,statement:'# '+problem.index}))});
+ assert.equal(await fs.readFile(path.join(directory,'A.cpp'),'utf8'),'my existing solution');
+ const ac=submission(16,'B',44,'Accepted');
+ await recordSubmission(context,ac.id,{...ac,solved:true,problem:'Gym 106725B',file:'B.cpp'},stateFile);
+ state=readPreferences(stateFile);
+ assert.equal(state.contestBoard.submissions.length,16);
+ assert.deepEqual(state.contestBoard.problems.map(problem=>[problem.tries,problem.penaltyMinutes]),[[3,40],[2,64]]);
+ assert.equal(state.submissionHistory[1].file,'B.cpp');
+
+ const another=await prepare(endsAt+1200000);
+ await recover(another.importId,[],startedAt+1200000,endsAt+1200000);
+ state=readPreferences(stateFile);
+ assert.equal(state.contestBoard.startedAt,startedAt+1200000);
+ assert.notEqual(state.contestBoard.id,context.boardId);
+ assert.deepEqual(state.submissionHistory,[]);
+}));
+
 test('QOJ 单题和 Dashboard 只建立提交映射，保留比赛字母和题库数字',()=>fixture(async({directory,stateFile,add})=>{
  const a={url:'https://qoj.ac/contest/42/problem/123',title:'A. Example',statement:'# A. Example',samples};
  const b={url:'https://qoj.ac/contest/42/problem/124',title:'B1. Example',statement:'# B1. Example',samples};

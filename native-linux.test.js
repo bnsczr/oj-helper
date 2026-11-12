@@ -48,6 +48,7 @@ test('Firefox 构建加载共享后台，处理题目导入、即时提交和榜
  const manifestFile=buildFirefoxExtension(path.join(directory,'extension'));
  const manifest=JSON.parse(await fs.readFile(manifestFile,'utf8'));
  assert.equal(manifest.browser_specific_settings.gecko.id,firefoxId);
+ assert.equal(manifest.browser_specific_settings.gecko.strict_min_version,'128.0');
  assert.equal(manifest.background.service_worker,undefined);
  assert.equal(manifest.options_ui.page,'options.html');
  assert.ok(manifest.host_permissions.includes('http://127.0.0.1/*'));
@@ -97,6 +98,17 @@ test('Firefox 构建加载共享后台，处理题目导入、即时提交和榜
  await context.poll();
  assert.match(tabs[1].url,/\/standings\/friends\/true/);
  assert.deepEqual(results[0].standings,{contest:'42'});
+}));
+
+test('Firefox 签名用构建使用同一扩展 ID 并声明 Firefox 安装时的数据许可',()=>fixture(async directory=>{
+ const manifestFile=buildFirefoxExtension(path.join(directory,'release'),{release:true});
+ const manifest=JSON.parse(await fs.readFile(manifestFile,'utf8'));
+ const gecko=manifest.browser_specific_settings.gecko;
+ assert.equal(gecko.id,firefoxId);
+ assert.equal(gecko.strict_min_version,'140.0');
+ assert.ok(gecko.data_collection_permissions.required.includes('websiteContent'));
+ assert.equal(manifest.incognito,'not_allowed');
+ assert.equal(manifest.background.scripts.at(-1),'worker.js');
 }));
 
 test('Firefox Linux 本机助手使用固定扩展 ID，启动器能接收消息并创建源码',async t=>{

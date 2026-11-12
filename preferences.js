@@ -111,7 +111,11 @@ function contestHeaderColors(count){
  for(let i=colors.length-1;i>0;i--){const other=randomInt(i+1);[colors[i],colors[other]]=[colors[other],colors[i]];}
  return colors;
 }
-function newContestBoard(dashboard,problems,importId){
+function newContestBoard(dashboard,problems,importId,previous,sessionHint){
+ if(previous&&sessionHint&&previous.contest===dashboard.contest&&previous.section===dashboard.section&&
+    previous.problems.length===problems.length&&problems.every((problem,index)=>problem.target===previous.problems[index].target)&&
+    (!previous.session||previous.session.participant===sessionHint.participant&&
+     (!sessionHint.virtual||Math.abs(previous.session.endsAt-sessionHint.endsAt)<=5000)))return previous;
  const colors=contestHeaderColors(problems.length);
  return {
   id:importId||randomUUID(),contest:dashboard.contest,section:dashboard.section,colorVersion:3,
@@ -144,6 +148,52 @@ function recordContestAttempt(board,target,id,result){
  problem.pending=!problem.solved&&Object.values(runs).includes('pending');
  return true;
 }
+function inContestSession(board,entry){
+ return Number.isSafeInteger(entry.submittedAt)&&entry.submittedAt>=board.startedAt&&entry.submittedAt<board.session.endsAt;
+}
+function replayContestSubmissions(board){
+ board.submissions.sort((a,b)=>a.submittedAt-b.submittedAt||Number(a.id)-Number(b.id));
+ board.problems=board.problems.map(({index,target,headerColor})=>({index,target,headerColor,tries:0,solved:false}));
+ for(const entry of board.submissions)recordContestAttempt(board,entry.target,entry.id,entry);
+}
+function contestRecent(board){return board.submissions.slice(-10).reverse();}
+async function recoverContestSubmissions({oj,importId,session},file=preferencesFile){
+ const {startedAt,endsAt,participant,submissions}=session||{};
+ if(oj!=='cf'||!importId||!Number.isSafeInteger(startedAt)||startedAt<=0||startedAt>Date.now()||
+    !Number.isSafeInteger(endsAt)||endsAt<=startedAt||typeof participant!=='string'||!participant||!Array.isArray(submissions))throw Error('赛时记录缺少有效场次信息。');
+ return withStateLock(file,()=>{
+  const state=readPreferences(file),board=state.contestBoard,added=state.lastAddition;
+  if(added?.importId!==importId||added.kind!=='contest'||!board||board.contest!==added.contest||board.section!==added.section)throw Error('导入已更新，未应用旧的赛时记录。');
+  const active=ojModeFor(state).id===oj,previous=board.session;
+  const sameSession=!previous||previous.participant===participant&&
+   (board.startedAt===startedAt||participant.startsWith('virtual:')&&Math.abs(board.startedAt-startedAt)<=5000);
+  board.startedAt=startedAt;board.session={endsAt,participant};
+  const targets=new Map(board.problems.map(problem=>[problem.index,problem.target]));
+  const entries=new Map();
+  if(sameSession){
+   const local=board.submissions||[];
+   const history=active?(state.submissionHistory||[]).filter(entry=>entry.boardId===board.id):[];
+   for(const entry of [...local,...history])if(entry.target&&inContestSession(board,entry))entries.set(entry.id,entry);
+  }
+  for(const run of submissions){
+   const target=targets.get(run?.index),id=String(run?.id);
+   if(!target||!/^[1-9]\d*$/.test(id)||!inContestSession(board,run)||typeof run.verdict!=='string'||!['pending','final','unknown'].includes(run.state))throw Error('赛时提交记录无效。');
+   const {submittedAt,state:runState,verdict,time,memory,score}=run;
+   const local=entries.get(id);
+   if(local?.state==='final'&&runState==='pending'&&!/^pretests? passed\b/i.test(local.rawVerdict??local.verdict))continue;
+   const problem=(board.section==='gym'?'Gym ':'')+board.contest+run.index;
+   entries.set(id,{id,target,boardId:board.id,submittedAt,problem,file:local?.file,state:runState,verdict,time,memory,score,
+    solved:runState==='final'&&contestReport(verdict).label==='CORRECT',
+    ...(runState==='pending'?{deadline:local?.deadline??endsAt+600000,monitorPid:local?.monitorPid}:{})});
+  }
+  board.submissions=[...entries.values()];
+  replayContestSubmissions(board);
+  const patch={contestBoard:board,lastAddition:{...added,startedAt}};
+  if(active)patch.submissionHistory=contestRecent(board);
+  updatePreferences(patch,file);
+  return {restored:board.submissions.length};
+ });
+}
 function restoreContestBoard(state,site){
  const profile=profileFor(state,site),addition=profile.lastAddition;
  if(profile.contestBoard||addition?.kind!=='contest'||!addition.directory)return null;
@@ -171,14 +221,30 @@ function restoreContestBoard(state,site){
 async function recordSubmission(context,id,result,file=preferencesFile){
  return withStateLock(file,()=>{
   const state=readPreferences(file),board=profileFor(state,context.oj).contestBoard,patch={};
-  if(result&&(state.submissionHistoryVersion||0)===context.version&&ojModeFor(state).id===context.oj){
+  const active=(state.submissionHistoryVersion||0)===context.version&&ojModeFor(state).id===context.oj;
+  const currentBoard=context.boardId&&board?.id===context.boardId;
+  const entry=result&&{...result,boardId:context.boardId};
+  if(entry&&context.oj==='cf')entry.target=context.target;
+  if(entry&&currentBoard&&board.session){
+   if(!board.problems.some(problem=>problem.target===context.target)||!inContestSession(board,entry))delete entry.boardId;
+   else if(/^pretests? passed\b/i.test(entry.rawVerdict??entry.verdict)){
+    entry.state='pending';entry.deadline=board.session.endsAt+600000;
+   }
+  }
+  if(entry&&active){
    const recent=state.submissionHistory||[];
    const existing=recent.findIndex(entry=>entry.id===id);
    // Updating a pending run must keep its submission order.
-   const entry={...result,boardId:context.boardId};
    patch.submissionHistory=existing<0?[entry,...recent].slice(0,10):recent.map(previous=>previous.id===id?entry:previous);
   }
-  if(context.boardId&&board?.id===context.boardId&&recordContestAttempt(board,context.target,id,result)){
+  if(currentBoard&&board.session){
+   if(entry?.boardId){
+    board.submissions=board.submissions.filter(previous=>previous.id!==id).concat(entry);
+    replayContestSubmissions(board);
+    Object.assign(patch,profilePatch(state,{contestBoard:board},context.oj));
+    if(active)patch.submissionHistory=contestRecent(board);
+   }else if(active&&Date.now()<board.session.endsAt)delete patch.submissionHistory;
+  }else if(currentBoard&&recordContestAttempt(board,context.target,id,result)){
    Object.assign(patch,profilePatch(state,{contestBoard:board},context.oj));
   }
   if(Object.keys(patch).length)updatePreferences(patch,file);
@@ -195,9 +261,9 @@ async function refreshSubmissionStatus(file=preferencesFile){
    if(!entry.monitorPid)return false;
    try{process.kill(entry.monitorPid,0);return false;}catch(error){return error.code==='ESRCH';}
   };
-  const unknown=new Set((state.submissionHistory||[]).filter(unavailable).map(entry=>entry.id));
-  if(unknown.size)patch.submissionHistory=state.submissionHistory.map(entry=>unknown.has(entry.id)?{...entry,state:'unknown',verdict:'UNKNOW'}:entry);
   const board=profileFor(state,site).contestBoard;
+  const unknown=new Set([...(state.submissionHistory||[]),...(board?.submissions||[])].filter(unavailable).map(entry=>entry.id));
+  if(unknown.size&&state.submissionHistory)patch.submissionHistory=state.submissionHistory.map(entry=>unknown.has(entry.id)&&entry.state==='pending'?{...entry,state:'unknown',verdict:'UNKNOW'}:entry);
   const recolor=board&&board.colorVersion!==3;
   if(recolor){
    const colors=contestHeaderColors(board.problems.length);
@@ -205,9 +271,14 @@ async function refreshSubmissionStatus(file=preferencesFile){
    board.colorVersion=3;
   }
   if(board&&(restored||unknown.size||recolor)){
-   if(unknown.size)for(const problem of board.problems){
-    for(const id of unknown)if(problem.runs?.[id]==='pending')problem.runs[id]='unknown';
-    problem.pending=!problem.solved&&Object.values(problem.runs||{}).includes('pending');
+   if(unknown.size){
+    if(board.submissions){
+     board.submissions=board.submissions.map(entry=>unknown.has(entry.id)&&entry.state==='pending'?{...entry,state:'unknown',verdict:'UNKNOW'}:entry);
+     replayContestSubmissions(board);
+    }else for(const problem of board.problems){
+     for(const id of unknown)if(problem.runs?.[id]==='pending')problem.runs[id]='unknown';
+     problem.pending=!problem.solved&&Object.values(problem.runs||{}).includes('pending');
+    }
    }
    Object.assign(patch,profilePatch(state,{contestBoard:board},site));
   }
@@ -241,4 +312,4 @@ async function resetCliState(file=preferencesFile){
 async function saveDefault(file,problem,stateFile=preferencesFile,oj){
  return withStateLock(stateFile,()=>{const state=readPreferences(stateFile),site=oj||ojModeFor(state).id;parseProblem(problem,site);const profile=profileFor(state,site);return updatePreferences(profilePatch(state,{defaultProblem:problem,fileProblems:{...profile.fileProblems,[fileKey(file)]:problem}},site),stateFile);});
 }
-module.exports={preferencesFile,parseProblem,cfProblemKey,readPreferences,updatePreferences,languageType,languageFor,fileKey,defaultFor,sequenceName,withStateLock,resetCliState,saveDefault,ojModeFor,selectOj,requireAvailableOj,profileFor,profilePatch,updateOjPreferences,verdictModeFor,selectVerdictMode,newContestBoard,submissionStatusContext,recordSubmission,refreshSubmissionStatus};
+module.exports={preferencesFile,parseProblem,cfProblemKey,readPreferences,updatePreferences,languageType,languageFor,fileKey,defaultFor,sequenceName,withStateLock,resetCliState,saveDefault,ojModeFor,selectOj,requireAvailableOj,profileFor,profilePatch,updateOjPreferences,verdictModeFor,selectVerdictMode,newContestBoard,submissionStatusContext,recordSubmission,refreshSubmissionStatus,recoverContestSubmissions};

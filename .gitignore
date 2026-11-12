@@ -6,6 +6,8 @@ node_modules/
 
 .native-host/
 .firefox-extension/
+.firefox-release/
+firefox-artifacts/
 
 .submit-preferences.json.lock
 

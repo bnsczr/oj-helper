@@ -11,6 +11,80 @@ function readDashboard(root=document,value=location.href){
  if(!problems.length)throw Error('未读取到比赛题目列表，请等待 Dashboard 加载完成后重试。');
  return problems;
 }
+function readCfContestClock(){
+ const sidebar=document.querySelector?.('#sidebar');
+ const phase=sidebar?.querySelector('.contest-state-phase')?.textContent.trim()||'';
+ if(!/^(?:contest is running|соревнование ид[её]т)$/i.test(phase))return null;
+ const regular=Array.from(sidebar.querySelectorAll('.contest-state-regular')).map(node=>node.textContent.trim());
+ if(regular.some(text=>/^(?:spectator|practice|manager|наблюдатель|дорешивание)$/i.test(text)))return null;
+ const virtual=regular.some(text=>/virtual participation|виртуальн/i.test(text));
+ const timer=sidebar.querySelector('.countdown')?.textContent.trim()||'';
+ const parts=/^(\d+):(\d{2}):(\d{2})$/.exec(timer);
+ const remaining=parts?Number(parts[1])*3600+Number(parts[2])*60+Number(parts[3]):null;
+ const profile=document.querySelector('#header a[href^="/profile/"]');
+ const handle=profile?.getAttribute('href')?.split('/')[2];
+ return {virtual,handle:handle?decodeURIComponent(handle):null,endsAt:remaining===null?null:(Math.floor(Date.now()/1000)+remaining)*1000};
+}
+async function cfContestApi(dashboard,method,params){
+ const url=new URL('/api/'+method,dashboard.url);
+ url.search=new URLSearchParams(params);
+ const response=await fetch(url.href,{credentials:'include',cache:'no-store',signal:AbortSignal.timeout(8000)});
+ if(!response.ok)throw Error('Codeforces API 暂时不可用（HTTP '+response.status+'）。');
+ const result=await response.json();
+ if(result.status!=='OK'||!Array.isArray(result.result))throw Error('Codeforces API 未提供本场数据。');
+ return result.result;
+}
+function cfRecoveredVerdict(run){
+ const labels={OK:'Accepted',WRONG_ANSWER:'Wrong answer',TIME_LIMIT_EXCEEDED:'Time limit exceeded',MEMORY_LIMIT_EXCEEDED:'Memory limit exceeded',
+  RUNTIME_ERROR:'Runtime error',COMPILATION_ERROR:'Compilation error',IDLENESS_LIMIT_EXCEEDED:'Idleness limit exceeded',
+  OUTPUT_LIMIT_EXCEEDED:'Output limit exceeded',PRESENTATION_ERROR:'Presentation error',SECURITY_VIOLATED:'Security violated',
+  FAILED:'Judgment failed',CHALLENGED:'Challenged',SKIPPED:'Skipped',REJECTED:'Rejected',PARTIAL:'Partial'};
+ if(!run.verdict||['TESTING','SUBMITTED'].includes(run.verdict)||run.verdict==='OK'&&run.testset==='PRETESTS')return {state:'pending',verdict:'pending'};
+ const label=labels[run.verdict];
+ if(!label)return {state:'unknown',verdict:'UNKNOW'};
+ const numbered=/^(?:Wrong answer|Time limit exceeded|Memory limit exceeded|Runtime error|Idleness limit exceeded|Output limit exceeded|Presentation error)$/.test(label)&&Number.isSafeInteger(run.passedTestCount)&&run.passedTestCount>=0;
+ return {state:'final',verdict:label+(numbered?' on '+(run.testset==='PRETESTS'?'pretest ':'test ')+(run.passedTestCount+1):'')};
+}
+async function readCfContestSubmissions(dashboard,clock,indices){
+ if(!clock.handle)throw Error('网页未识别已登录的 Codeforces 账号。');
+ const contests=await cfContestApi(dashboard,'contest.list',{gym:String(dashboard.section==='gym')});
+ const contest=contests.find(item=>String(item.id)===dashboard.contest);
+ if(!Number.isSafeInteger(contest?.durationSeconds)||contest.durationSeconds<=0)throw Error('未取得本场比赛时长。');
+ const duration=contest.durationSeconds*1000;
+ let startedAt=clock.virtual?clock.endsAt-duration:contest.startTimeSeconds*1000;
+ if(!Number.isSafeInteger(startedAt)||startedAt<=0||startedAt>Date.now())throw Error('未能核对本场开赛时间。');
+ const types=clock.virtual?['VIRTUAL']:['CONTESTANT','OUT_OF_COMPETITION'],handle=clock.handle.toLowerCase();
+ const submissions=new Map();
+ const requested=new Set(indices),count=1000;
+ let exactVirtualStart,firstId;
+ const cutoff=startedAt-(clock.virtual?5000:0);
+ for(let from=1;;from+=count){
+  const page=await cfContestApi(dashboard,'contest.status',{contestId:dashboard.contest,handle:clock.handle,from,count});
+  if(page.length&&page[0].id===firstId)throw Error('Codeforces 提交列表分页重复，未写入不完整记录。');
+  firstId=page[0]?.id;
+  for(const run of page){
+   const submittedAt=run.creationTimeSeconds*1000,index=run.problem?.index;
+   if(submittedAt<cutoff||String(run.contestId)!==dashboard.contest||!requested.has(index)||!types.includes(run.author?.participantType)||
+      !run.author.members?.some(member=>member.handle?.toLowerCase()===handle))continue;
+   if(clock.virtual){
+    const start=(run.author.startTimeSeconds??run.creationTimeSeconds-run.relativeTimeSeconds)*1000;
+    if(!Number.isSafeInteger(start)||Math.abs(start-startedAt)>5000)continue;
+    if(exactVirtualStart!==undefined&&exactVirtualStart!==start)throw Error('找到多个虚拟场次，未混合提交记录。');
+    exactVirtualStart=start;
+   }
+   submissions.set(run.id,{id:run.id,index,submittedAt,...cfRecoveredVerdict(run),
+    time:Number.isSafeInteger(run.timeConsumedMillis)?run.timeConsumedMillis+' ms':undefined,
+    memory:Number.isSafeInteger(run.memoryConsumedBytes)?Math.floor(run.memoryConsumedBytes/1024)+' KB':undefined,
+    score:Number.isFinite(run.points)?String(run.points):undefined});
+  }
+  if(page.length<count||page.some(run=>run.creationTimeSeconds*1000<cutoff))break;
+  await new Promise(resolve=>setTimeout(resolve,2100));
+ }
+ startedAt=exactVirtualStart??startedAt;
+ const endsAt=clock.virtual?startedAt+duration:Math.max(startedAt+duration,clock.endsAt||0);
+ return {startedAt,endsAt,participant:cfContestParticipant(clock),submissions:[...submissions.values()].filter(run=>run.submittedAt>=startedAt&&run.submittedAt<endsAt)};
+}
+function cfContestParticipant(clock){return (clock.virtual?'virtual:':'official:')+(clock.handle||'').toLowerCase();}
 function readContestSamples(indices,dashboard,index){
  const challenge=/just a moment|attention required|security verification/i.test(document.title)
   ||!!document.querySelector?.('#challenge-running, #challenge-stage');
@@ -62,6 +136,7 @@ function notifyImportProgress(tabId,text){
 function importSummary(data){
  const result=[];
  if(data.mappingOnly||data.statementRead?.length)result.push('提交映射已建立：'+(data.files||[data]).map(file=>file.name).join('、'));
+ if(data.sessionReport)result.push(data.sessionReport);
  if(data.statementRead?.length)result.push('题面读取成功：'+data.statementRead.join('、'));
  if(data.statementFailed?.length)result.push('题面未读全：'+data.statementFailed.join('；'));
  return result.length?'\n'+result.join('\n'):'';
@@ -134,14 +209,23 @@ async function readDashboardTab(tabId,indices,dashboard,index,deadline,secret){
  if(index)throw Error('无法读取 '+index+' 题题面，未覆盖文件。请检查该题是否能在浏览器打开。');
  return [];
 }
-async function createDashboardFiles(tabId,url,indices,startedAt){
+async function createDashboardFiles(tabId,url,indices,startedAt,clock){
  const dashboard=dashboardFromUrl(url);
  if(!dashboard||!Array.isArray(indices)||!indices.length||indices.some(index=>! /^[A-Z]\d*$/.test(index))||new Set(indices).size!==indices.length)throw Error('比赛题目列表无效。');
  const {bridgeSecret,directory,initialContent,openAfterAdd}=await ojBrowser.storage.local.get(['bridgeSecret','directory','initialContent','openAfterAdd']);
  if(!directory?.trim())throw Error('尚未设置保存目录，请打开扩展设置填写。');if(!bridgeSecret)throw Error('尚未配对，请在设置中完成配对。');
  const common={oj:'cf',secret:bridgeSecret,directory,url:dashboard.url};
- const mapping=await importNative({...common,action:'prepare-import',earlyMapping:true,startedAt,openAfterAdd,problems:indices.map(index=>({index}))});
- if(mapping.mappingOnly||mapping.importId)notifyImportProgress(tabId,'提交映射已建立，正在读取题面…');
+ const recoverSession=clock&&{participant:cfContestParticipant(clock),endsAt:clock.endsAt,virtual:clock.virtual};
+ const mapping=await importNative({...common,action:'prepare-import',earlyMapping:true,startedAt:clock?undefined:startedAt,recoverSession,openAfterAdd,problems:indices.map(index=>({index}))});
+ if(clock&&mapping.importId){
+  notifyImportProgress(tabId,'提交映射已建立，正在恢复赛时提交记录…');
+  try{
+   const session=await readCfContestSubmissions(dashboard,clock,indices);
+   const {restored}=await importNative({...common,action:'recover-contest-submissions',importId:mapping.importId,session});
+   mapping.sessionReport='已恢复 '+restored+' 条赛时提交，已按开赛时间更新 status。';
+  }catch(error){mapping.sessionReport='赛时记录恢复失败：'+error.message;}
+ }
+ if(mapping.mappingOnly||mapping.importId)notifyImportProgress(tabId,(mapping.sessionReport?mapping.sessionReport+'\n':'提交映射已建立，')+'正在读取题面…');
  let reader;
  const problems=[],missing=[];
  try{
@@ -178,6 +262,6 @@ async function createDashboardFiles(tabId,url,indices,startedAt){
   return completeMappedImport(mapping,common,read,missing,statement);
  }
  const data=await importNative({...common,action:'create-dashboard',finishId:mapping.importId,initialContent,problems,openAfterAdd:openAfterAdd||{}});
- return {...data,statementRead:read,statementFailed:missing};
+ return {...data,sessionReport:mapping.sessionReport,statementRead:read,statementFailed:missing};
 }
-if(typeof module!=='undefined')module.exports={readDashboard,readContestSamples};
+if(typeof module!=='undefined')module.exports={readDashboard,readContestSamples,readCfContestClock,readCfContestSubmissions};

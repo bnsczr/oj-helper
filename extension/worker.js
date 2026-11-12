@@ -145,7 +145,7 @@ ojBrowser.runtime.onMessage.addListener((m,s,reply)=>{
       const source=s.tab||((s.url===ojBrowser.runtime.getURL('popup.html')&&Number.isInteger(m.tabId))?await ojBrowser.tabs.get(m.tabId):null);
       if(!source)throw Error('批量操作来源无效。');
       const url=s.tab?s.url:source.url;
-      return createDashboardFiles(source.id,url,m.problems,s.tab?m.startedAt:undefined);
+      return createDashboardFiles(source.id,url,m.problems,s.tab?m.startedAt:undefined,s.tab?m.clock:undefined);
     })().then(reply).catch(e=>reply({error:e.message}));return true;
   }
   if(m.action==='cfhelper-add-problem'){

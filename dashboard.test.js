@@ -9,6 +9,42 @@ test('Dashboard 识别并去重，只保留当前比赛的题号',()=>{
  assert.equal(context.readDashboard(root,'https://codeforces.com/contest/2278').join(','),'A,B1');
  for(const url of ['https://codeforces.com/contest/2278/status','https://evil.test/contest/2278'])assert.equal(dashboardFromUrl(url),null);
 });
+test('Codeforces Dashboard 识别当前 VP 倒计时，并跳过练习',()=>{
+ const now=1780000000300;
+ const {document}=require('linkedom').parseHTML('<div id="header"><a href="/profile/Tester">Tester</a></div><div id="sidebar"><span class="contest-state-phase">Contest is running</span><span class="contest-state-regular countdown">04:59:34</span><span class="contest-state-regular">Virtual Participation</span></div>');
+ const context=vm.createContext({document,Date:{now:()=>now},decodeURIComponent});vm.runInContext(script,context);
+ const clock=context.readCfContestClock();
+ assert.equal(clock.virtual,true);assert.equal(clock.handle,'Tester');
+ assert.equal(clock.endsAt,1780000000000+(5*3600-26)*1000);
+ document.querySelector('.contest-state-phase').textContent='Finished';
+ assert.equal(context.readCfContestClock(),null);
+});
+test('Codeforces 虚拟场按网页计时定位，翻页并排除练习、旧 VP 和其他账号',async()=>{
+ const startedAt=1780000000000,durationSeconds=7200,calls=[];
+ const run=(id,delta,participantType='VIRTUAL',start=startedAt,handle='Tester')=>({
+  id,contestId:42,creationTimeSeconds:(startedAt+delta*1000)/1000,problem:{index:'A'},
+  author:{participantType,startTimeSeconds:start/1000,members:[{handle}]},verdict:'WRONG_ANSWER',passedTestCount:2
+ });
+ const first=Array.from({length:1000},(_,i)=>run(1100-i,2000-i));
+ first[0]=run(1100,2000,'PRACTICE');
+ first[1]=run(1099,1999,'VIRTUAL',startedAt-3600000);
+ first[2]=run(1098,1998,'VIRTUAL',startedAt,'Other');
+ const second=[run(100,5),{...run(99,2),verdict:'OK',testset:'PRETESTS'},run(98,-50)];
+ const context=vm.createContext({URL,URLSearchParams,AbortSignal,Date:{now:()=>startedAt+2000000},setTimeout:fn=>fn(),fetch:async value=>{
+  const url=new URL(value);calls.push(url);
+  const result=url.pathname.endsWith('contest.list')?[{id:42,durationSeconds}]:url.searchParams.get('from')==='1'?first:second;
+  return {ok:true,json:async()=>({status:'OK',result})};
+ }});
+ vm.runInContext(script,context);
+ const board=await context.readCfContestSubmissions({contest:'42',section:'gym',url:'https://codeforces.com/gym/42'},
+  {virtual:true,handle:'Tester',endsAt:startedAt+durationSeconds*1000+2000},['A']);
+ assert.equal(board.startedAt,startedAt);
+ assert.equal(board.submissions.length,999);
+ assert.equal(board.submissions.find(entry=>entry.id===99).state,'pending');
+ assert.equal(board.submissions.find(entry=>entry.id===100).verdict,'Wrong answer on test 3');
+ assert.equal(calls[2].searchParams.get('from'),'1001');
+ assert.equal(calls[1].searchParams.get('handle'),'Tester');
+});
 test('所有题目页按标题匹配样例，并保留已读题供逐题补齐',()=>{
  const nodes=['B1','A'].map(index=>({querySelector:()=>({textContent:index+'. Test'}),samples:[{input:index,output:index+' result'}]}));
  const url='https://codeforces.com/gym/106725';

@@ -42,7 +42,8 @@ function waitForAdd(request,duration=30000){
    }
    if(dashboard){
     show('正在添加比赛全部题目及样例…');
-    const data=await waitForAdd(ojBrowser.runtime.sendMessage({action:'cfhelper-add-dashboard',startedAt,problems:readDashboard(document,location.href)}),240000);
+    const clock=readCfContestClock();
+    const data=await waitForAdd(ojBrowser.runtime.sendMessage({action:'cfhelper-add-dashboard',startedAt,problems:readDashboard(document,location.href),...(clock?{clock}:{})}),240000);
     if(!data||data.error)throw Error(data?.error||'批量创建失败');
     show('更新完成'+(data.mappingOnly?'':'\n'+data.files.map(file=>file.name+' → '+file.defaultProblem+'（'+file.sampleCount+' 组样例）').join('\n'))+importSummary(data)+autoOpenSummary(data));return;
    }

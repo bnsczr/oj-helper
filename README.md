@@ -59,7 +59,9 @@ node cli.js --pair
 realpath "$HOME/vscpp/OJ-work"
 ```
 
-在 Firefox 打开 `about:debugging#/runtime/this-firefox`，点击「临时载入附加组件」，选择构建命令输出的 `.firefox-extension/manifest.json`。如果文件选择器隐藏点号目录，可直接输入路径。打开 `about:addons` 中的 oj-helper 设置，保存配对码和 `realpath` 输出的题目目录，并允许访问使用的 OJ 网站。刷新题目页后，点击 `+` 或按 `Shift+N` 验证导入。
+在 Firefox 打开 `about:debugging#/runtime/this-firefox`，点击「临时载入附加组件」，选择构建命令输出的 `.firefox-extension/manifest.json`。这个方式用于测试，Firefox 退出后会卸载临时扩展。需要重启后继续使用时，按下面的长期安装步骤安装签名包。
+
+打开 `about:addons` 中的 oj-helper 设置，也可以在浏览器工具栏的扩展菜单打开 oj-helper，再点「设置保存目录」。保存配对码和 `realpath` 输出的题目目录，并允许访问使用的 OJ 网站。刷新题目页后，点击 `+` 或按 `Shift+N` 验证导入。
 
 ```sh
 node cli.js status
@@ -69,7 +71,16 @@ node open.js b
 
 本机助手写入 `~/.mozilla/native-messaging-hosts/`，按需启动。Snap 和 Flatpak 的 Firefox 可能需要发行版提供的额外本机通信配置。移动项目或更换 Node.js 路径后，再执行一次 `node cli.js --install-native firefox`。
 
-临时加载的版本在 Firefox 退出后需要重新加载。更新项目后运行 `npm ci` 和 `npm run build:firefox`，再在调试页重载扩展。常规 Firefox 的长期安装使用 Mozilla 签名的 `.xpi`，见 [Mozilla 签名说明](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)。
+#### 长期安装，重启后保留
+
+长期安装包使用 Firefox 140 或更新版本的安装权限提示。扩展将配对凭据、题目链接、操作时间、题面和榜单等数据传给本机助手，提交时将所选源码发给对应 OJ。项目不提供遥测服务。
+
+1. 在仓库目录运行 `npm run package:firefox`，生成 `firefox-artifacts/` 下带版本号的 ZIP。
+2. 登录 [Mozilla 开发者中心](https://addons.mozilla.org/developers/)，选择提交附加组件和 **On your own**（自行分发），上传 ZIP。Mozilla 签名后下载 `.xpi`。自行分发无需创建公开的扩展商店页面。见 [Mozilla 提交说明](https://extensionworkshop.com/documentation/publish/submitting-an-add-on/)。
+3. 在 Firefox 打开 `about:addons`，从齿轮菜单选择「从文件安装附加组件」，选中下载的已签名 `.xpi`。仍在运行的临时版可在调试页移除后再安装签名版。
+4. 核对扩展设置中的配对码和题目目录，再重启 Firefox，确认 `about:addons` 的扩展列表仍有 oj-helper。已注册过的本机助手使用同一个扩展 ID。
+
+更新已签名的版本时，先提高扩展版本号并取得新的签名 `.xpi`，再从文件安装。更新临时测试版时，运行 `npm run build:firefox` 后在调试页重载即可。
 
 ### Linux 桌面安装
 
@@ -86,7 +97,7 @@ mkdir -p "$HOME/OJ-work"
 1. 在 `chrome://extensions`（Edge 为 `edge://extensions`）打开开发人员模式，加载仓库的 `extension` 目录。
 2. 运行 `node cli.js --pair`，在扩展选项保存配对码，并填写保存目录的绝对路径（可用 `realpath "$HOME/OJ-work"` 查看）。
 3. 运行 `node cli.js --install-native`。如果没有自动识别扩展，复制扩展管理页中该扩展的 ID，运行 `node cli.js --install-native "$extension_id"`，其中 `extension_id` 为复制的 ID。安装后重新加载扩展。
-4. 可选：在仓库目录运行 `npm link --prefix "$HOME/.local"`，再运行 `export PATH="$HOME/.local/bin:$PATH"`，即可使用 `oj`、`submit`、`open` 和 `mode`。将这条 `export` 写入所用 shell 的配置文件可在以后复用。也可在仓库目录用 `node cli.js A.cpp`、`node open.js s`、`node mode.js contest`。
+4. 可选：在仓库目录运行 `npm install --global --no-install-links --prefix "$HOME/.local" "$PWD"`，将命令链接到当前项目。fish 运行 `fish_add_path "$HOME/.local/bin"`，Bash 运行 `export PATH="$HOME/.local/bin:$PATH"`，即可使用 `oj`、`submit`、`open` 和 `mode`。也可在仓库目录用 `node cli.js A.cpp`、`node open.js s`、`node mode.js contest`。
 
 安装只写当前用户的浏览器 `NativeMessagingHosts` 目录与项目下的 `.native-host`，不需要 `sudo`。这套步骤面向普通桌面浏览器安装；Snap／Flatpak 浏览器可能需要额外的本机消息配置。浏览器若以自定义 `--user-data-dir` 启动，可在运行安装命令时将同一个绝对路径传给 `CHROME_USER_DATA_DIR`。更换项目或 Node.js 路径后重新安装本机助手。
 
@@ -109,7 +120,9 @@ submit B.cpp --lang 'GNU G++23'
 
 `submit status` 从最新到最早显示最近 10 次提交。切换正常模式或比赛模式会保留这些记录，并按当前模式显示。正常模式使用已保存的原始结论、耗时、内存和分数。切换 OJ 或执行 `submit clear` 会清空这份记录。从 Dashboard 点 `+` 或按 `Shift+N` 后，正常模式与比赛模式都在状态页顶部按题号横向显示本轮累计尝试。每题随机分配互不相同、对比鲜明的题号背景，文字自动选用黑色或白色。题号下方的状态方格通过为绿，等待结果为蓝色 `pending`，已尝试未通过为红，未尝试留空。第一次通过也计一次，之后该题的尝试数冻结并保持绿色。重新导入 Dashboard 开始新一轮累计，`submit clear` 清除两站的比赛统计。
 
-在 Dashboard 按 `Shift+N` 时，从按键时刻开始本场计时。两种模式的 `submit status` 都在逐题栏左侧显示总罚时，在已通过的题目下显示首次 AC 的提交时间（分钟）。每道已通过题的罚时为首次 AC 的提交分钟数加上此前每次有效失败的 20 分钟。编译错误不加罚时。本场提交显示开赛后的相对时间，其他提交显示北京时间（年月日时分）。
+在 Codeforces／Gym 的正赛或 VP Dashboard 按 `Shift+N`，会先建立提交映射，然后按登录账号、参赛类型和当前场次恢复赛时提交，最后读取题面。重复按键可在重启或换电脑后重新同步，已关联到同一道题的源码会保留。逐题栏按本场完整提交计算尝试次数和罚时，提交队列保留本场最近 10 条。普通练习的 Dashboard 按键时刻作为本地计时起点。
+
+两种模式的 `submit status` 都在逐题栏左侧显示总罚时，在已通过的题目下显示首次 AC 的提交时间（分钟）。每道已通过题的罚时为首次 AC 的提交分钟数加上此前每次有效失败的 20 分钟。编译错误不加罚时。本场提交显示开赛后的相对时间，其他提交显示北京时间（年月日时分）。
 
 按 Ctrl+C 退出提交终端后，已发出的提交由独立后台进程继续跟踪。确认提交编号后，记录显示灰色 `pending`。取得结果后自动保存，可再次运行 `submit status` 查看。提交已确认但读取失败、后台进程异常退出，或达到原有的 10 分钟总等待上限时，记录显示灰色 `UNKNOW`，并保留该次 try。未确认提交成功的任务不计入记录及 try。已领取但尚未点击提交的任务会在表单提交前检查取消状态。
 

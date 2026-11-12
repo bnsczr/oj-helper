@@ -67,7 +67,7 @@ async function createProblemFile(directory,url,stateFile=preferencesFile,initial
   return {...file,...(importId||emptySource?{mappingOnly:emptySource,importId}: {})};
  });
 }
-async function createContestFiles(directory,url,problems,stateFile=preferencesFile,initialContent=DEFAULT_INITIAL_CONTENT,{importId,finishId,earlyMapping,startedAt}={}){
+async function createContestFiles(directory,url,problems,stateFile=preferencesFile,initialContent=DEFAULT_INITIAL_CONTENT,{importId,finishId,earlyMapping,startedAt,recoverSession}={}){
  const dashboard=dashboardFromUrl(url);
  if(!dashboard||!Array.isArray(problems)||!problems.length||typeof initialContent!=='string')throw Error('比赛批量创建参数无效。');
  if(typeof directory!=='string'||!path.isAbsolute(directory))throw Error('保存目录必须是绝对路径。');
@@ -88,14 +88,17 @@ async function createContestFiles(directory,url,problems,stateFile=preferencesFi
   for(const file of prepared){
    if(!emptySource&&!importId){
     file.existed=sourceVersions[file.name]!==null;
-    if(!await writeImportedSource(file,file.content,plan)){file.sampleCount=0;warnings.push(preservedSourceWarning(file));}
+    if(file.existed&&plan?.preserveSources?.includes(file.name))file.sampleCount=0;
+    else if(!await writeImportedSource(file,file.content,plan)){file.sampleCount=0;warnings.push(preservedSourceWarning(file));}
    }
    fileProblems[fileKey(file.path)]=file.defaultProblem;assigned[file.defaultProblem]=file.name;
   }
   let next=0;while(Object.values(assigned).includes(sequenceName(next)))next++;
   const statement=contestStatement(dashboard,problems);
-  const lastAddition={kind:'contest',...dashboard,directory,statement,importId:plan?.importId??importId,startedAt:plan?.startedAt??startedAt,sourceVersions:importId?sourceVersions:undefined};
-  updatePreferences(plan?{lastAddition}:{activeOj:'cf',lastAddition,defaultProblem:prepared.at(-1).defaultProblem,fileProblems,contestBoard:newContestBoard(lastAddition,prepared.map(file=>({index:file.name.slice(0,-4),target:file.defaultProblem})),importId),assignments:{...state.assignments,[fileKey(directory)]:{next,problems:assigned}}},stateFile);
+  const preserveSources=importId&&recoverSession?prepared.filter(file=>state.fileProblems?.[fileKey(file.path)]===file.defaultProblem).map(file=>file.name):undefined;
+  const lastAddition={kind:'contest',...dashboard,directory,statement,importId:plan?.importId??importId,startedAt:plan?.startedAt??startedAt,sourceVersions:importId?sourceVersions:undefined,preserveSources};
+  const board=plan?undefined:newContestBoard(lastAddition,prepared.map(file=>({index:file.name.slice(0,-4),target:file.defaultProblem})),importId,state.contestBoard,recoverSession);
+  updatePreferences(plan?{lastAddition}:{activeOj:'cf',lastAddition,defaultProblem:prepared.at(-1).defaultProblem,fileProblems,contestBoard:board,assignments:{...state.assignments,[fileKey(directory)]:{next,problems:assigned}}},stateFile);
   return {contest:dashboard.contest,files:prepared.map(({content,...file})=>file),...(warnings.length?{warnings}:{}),...(importId||emptySource?{mappingOnly:emptySource,importId}: {})};
  });
 }

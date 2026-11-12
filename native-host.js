@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),{randomUUID}=require('node
 const {createProblemFile,createContestFiles,contestStatement}=require('./files-server');
 const {normalizeOpenSettings}=require('./extension/open-settings');
 const {dashboardFromUrl}=require('./extension/problem');
-const {parseProblem,readPreferences,updatePreferences,profileFor,profilePatch,withStateLock,preferencesFile,verdictModeFor}=require('./preferences');
+const {parseProblem,readPreferences,updatePreferences,profileFor,profilePatch,withStateLock,preferencesFile,verdictModeFor,recoverContestSubmissions}=require('./preferences');
 const {saveStatement}=require('./open');
 const {openInVSCode}=require('./editor');
 function encode(message){const body=Buffer.from(JSON.stringify(message),'utf8'),head=Buffer.alloc(4);head.writeUInt32LE(body.length);return Buffer.concat([head,body]);}
@@ -43,7 +43,7 @@ async function finishAddition(result,message,openEditor){
 }
 async function prepareImport(message,stateFile){
  if(message.earlyMapping!==true&&verdictModeFor(readPreferences(stateFile))!=='contest')return {mappingOnly:false};
- const {url,directory,problems,oj,startedAt}=message,options={importId:randomUUID(),earlyMapping:message.earlyMapping===true};
+ const {url,directory,problems,oj,startedAt,recoverSession}=message,options={importId:randomUUID(),earlyMapping:message.earlyMapping===true,recoverSession};
  if(problems&&Number.isSafeInteger(startedAt)&&startedAt>0&&startedAt<=Date.now())options.startedAt=startedAt;
  if(oj==='qoj'){
   const draft=problem=>({url:problem.url,index:problem.index,title:problem.title,statement:'# 题面待读取'});
@@ -85,6 +85,7 @@ async function handle(message,{secretFile=path.join(__dirname,'.bridge-secret'),
    return result.mappingOnly?await finishAddition(result,message,openEditor):result;
   }
   if(message.action==='cache-import')return await cacheImport(message,stateFile);
+  if(message.action==='recover-contest-submissions')return await recoverContestSubmissions(message,stateFile);
   if(message.action==='pdf-statement')return await convertImportPdf(message);
   if(message.action==='qoj-import-statement'){
    const {prepareProblem,sampleMarkdown}=require('./qoj-files');
